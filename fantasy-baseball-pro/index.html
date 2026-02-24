@@ -359,8 +359,10 @@
             try {
                 const params = new URLSearchParams();
                 params.set("mode", currentMode);
-                const response = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
-                const data = await response.json();
+                const data = await fetchJsonWithRetry(
+                    `${API_BASE}/dashboard?${params.toString()}`,
+                    { retries: 1, timeoutMs: 15000, retryDelayMs: 1400 }
+                );
                 renderDashboard(data);
             } catch (_) {
                 dashboardEl.innerHTML = "";
@@ -533,8 +535,10 @@
             try {
                 const params = new URLSearchParams();
                 params.set("mode", currentMode);
-                const response = await fetch(`${API_BASE}/waiver_scanner?${params.toString()}`);
-                const data = await response.json();
+                const data = await fetchJsonWithRetry(
+                    `${API_BASE}/waiver_scanner?${params.toString()}`,
+                    { retries: 1, timeoutMs: 15000, retryDelayMs: 1400 }
+                );
                 renderWaiverScanner(data);
             } catch (_) {
                 waiverEl.innerHTML = "";
@@ -905,11 +909,53 @@
             if (currentMode === "custom") { const s = startDateInput.value; const e = endDateInput.value; if (!s || !e) return { error: "Select both dates for custom range." }; params.set("start_date", s); params.set("end_date", e); }
             return { params };
         }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function fetchJsonWithRetry(url, opts = {}) {
+            const retries = Number.isFinite(opts.retries) ? opts.retries : 0;
+            const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : 12000;
+            const retryDelayMs = Number.isFinite(opts.retryDelayMs) ? opts.retryDelayMs : 1200;
+
+            let lastErr = null;
+            for (let attempt = 0; attempt <= retries; attempt += 1) {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const response = await fetch(url, { signal: controller.signal });
+                    clearTimeout(timer);
+                    const data = await response.json();
+                    if (!response.ok) {
+                        const msg = (data && data.error) ? data.error : `HTTP ${response.status}`;
+                        throw new Error(msg);
+                    }
+                    return data;
+                } catch (err) {
+                    clearTimeout(timer);
+                    lastErr = err;
+                    if (attempt < retries) {
+                        await sleep(retryDelayMs);
+                    }
+                }
+            }
+            throw lastErr || new Error("Request failed");
+        }
+
         async function fetchPlayerByName(name, selectedPlayerId = null) {
             const built = buildQueryParams(selectedPlayerId); if (built.error) return { error: built.error };
             const url = `${API_BASE}/jugador/${encodeURIComponent(name || "player")}?${built.params.toString()}`;
-            const response = await fetch(url); const data = await response.json();
-            if (!response.ok || data.error) return { error: data.error || "Player not found." }; return data;
+            try {
+                const data = await fetchJsonWithRetry(
+                    url,
+                    { retries: 2, timeoutMs: 18000, retryDelayMs: 1500 }
+                );
+                if (data.error) return { error: data.error || "Player not found." };
+                return data;
+            } catch (_) {
+                return { error: "Backend waking up. Try again in a few seconds." };
+            }
         }
         async function buscarJugador(selectedPlayerId = null) {
             const busqueda = inputEl.value.trim(); const contenedor = document.getElementById("contenedor-resultado");
