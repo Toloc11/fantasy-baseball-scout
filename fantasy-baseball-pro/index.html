@@ -108,10 +108,16 @@
                     class="w-full rounded-xl border border-slate-600 bg-slate-800 p-3 pr-10 text-white outline-none ring-orange-400 transition focus:ring-2">
                 <div id="autocompleteBox" class="absolute z-20 mt-2 hidden w-full rounded-xl border border-slate-700 bg-slate-900/95 shadow-xl"></div>
             </div>
-            <button onclick="buscarJugador()" id="btnBuscar"
-                class="rounded-xl bg-orange-500 px-6 py-3 font-bold text-slate-950 transition hover:bg-orange-400 active:scale-95">
-                Search
-            </button>
+            <div class="flex gap-2">
+                <button onclick="buscarJugador()" id="btnBuscar"
+                    class="rounded-xl bg-orange-500 px-6 py-3 font-bold text-slate-950 transition hover:bg-orange-400 active:scale-95">
+                    Search
+                </button>
+                <button onclick="openCompareModalBlank()" id="btnOpenCompare"
+                    class="rounded-xl border border-orange-500/70 bg-slate-800 px-5 py-3 font-bold text-orange-200 transition hover:bg-slate-700 active:scale-95">
+                    Compare
+                </button>
+            </div>
         </div>
 
         <section id="contenedor-resultado"></section>
@@ -143,12 +149,30 @@
                 </div>
                 <button id="runCompareBtn" class="rounded-xl bg-orange-500 px-6 py-3 font-bold text-slate-950 hover:bg-orange-400">Compare</button>
             </div>
+            <div class="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-slate-700 bg-slate-800/50 p-3">
+                <label class="text-xs text-slate-300">Period
+                    <select id="compareModeSelect" class="ml-1 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white">
+                        <option value="currentseason">Current Season</option>
+                        <option value="lastseason">Last Season</option>
+                        <option value="last30">Last 30 Days</option>
+                        <option value="last14">Last 14 Days</option>
+                        <option value="last7">Last 7 Days</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </label>
+                <label id="compareDateFromWrap" class="hidden text-xs text-slate-300">From
+                    <input type="date" id="compareStartDateInput" class="ml-1 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white">
+                </label>
+                <label id="compareDateToWrap" class="hidden text-xs text-slate-300">To
+                    <input type="date" id="compareEndDateInput" class="ml-1 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white">
+                </label>
+            </div>
             <div id="compareResults" class="max-h-[70vh] overflow-auto"></div>
         </div>
     </div>
 
     <script>
-        const API_BASE = "https://fantasy-baseball-scout.onrender.com";
+        const API_BASE = "http://127.0.0.1:8000";
         const inputEl = document.getElementById("busquedaInput");
         const boxEl = document.getElementById("autocompleteBox");
         const customWrap = document.getElementById("customRangeWrap");
@@ -169,15 +193,23 @@
         const compareAutoBoxA = document.getElementById("compareAutoBoxA");
         const compareAutoBoxB = document.getElementById("compareAutoBoxB");
         const compareResults = document.getElementById("compareResults");
+        const compareModeSelect = document.getElementById("compareModeSelect");
+        const compareStartDateInput = document.getElementById("compareStartDateInput");
+        const compareEndDateInput = document.getElementById("compareEndDateInput");
+        const compareDateFromWrap = document.getElementById("compareDateFromWrap");
+        const compareDateToWrap = document.getElementById("compareDateToWrap");
         let autocompleteTimer = null;
         let compareAutoTimer = null;
         let currentMode = "currentseason";
+        let compareMode = "currentseason";
         let lastViewedPlayer = null;
         let yahooConnected = false;
         let yahooLeagues = [];
         let selectedYahooLeague = "";
         const WATCHLIST_KEY = "fbs_watchlist_v1";
         const STAT_HELP = {
+            "AB": "Official at-bats.",
+            "H": "Hits.",
             "AVG": "Batting average: hits per at-bat.",
             "OBP": "On-base percentage: how often a player reaches base.",
             "SLG": "Slugging percentage: power per at-bat.",
@@ -201,6 +233,8 @@
             "Barrels / PA": "Barrels generated per plate appearance.",
             "Sweet Spot %": "Share of balls hit in optimal launch-angle range.",
             "Avg Launch Angle": "Average launch angle in degrees.",
+            "xBA": "Expected batting average based on quality of contact.",
+            "xSLG": "Expected slugging based on quality of contact.",
             "Avg EV Allowed": "Average exit velocity allowed by pitcher.",
             "Hard Hit % Allowed": "Percent of contact allowed at 95+ mph.",
             "Whiff %": "Swing-and-miss rate on swings.",
@@ -208,6 +242,26 @@
             "Chase %": "Swings induced on pitches outside strike zone.",
             "K-BB% (Savant)": "Statcast-estimated strikeout minus walk rate."
         };
+        const HITTING_ORDER = ["PA", "AB", "H", "R", "HR", "RBI", "BB", "K", "SB", "AVG", "OBP", "SLG", "OPS", "BB%", "K%", "SLAM"];
+        const PITCHING_ORDER = ["W", "ERA", "WHIP", "IP", "K", "BB", "H", "SV", "HLD", "SHO", "QS", "K/9", "BB/9", "K-BB%"];
+        const SAVANT_HITTING_ORDER = ["Avg Exit Velocity", "Max Exit Velocity", "EV50", "Hard Hit %", "Barrel %", "Barrels / PA", "Sweet Spot %", "Avg Launch Angle", "xBA", "xSLG"];
+        const SAVANT_PITCHING_ORDER = ["Avg EV Allowed", "Hard Hit % Allowed", "Whiff %", "CSW %", "Chase %", "K-BB% (Savant)"];
+
+        function orderedEntries(stats, orderList = []) {
+            const obj = stats || {};
+            const used = new Set();
+            const out = [];
+            for (const key of orderList) {
+                if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                    out.push([key, obj[key]]);
+                    used.add(key);
+                }
+            }
+            for (const [k, v] of Object.entries(obj)) {
+                if (!used.has(k)) out.push([k, v]);
+            }
+            return out;
+        }
 
         function setActivePeriodTab() {
             document.querySelectorAll(".period-tab").forEach(btn => {
@@ -241,10 +295,31 @@
             return `<p class="text-sm leading-6 text-slate-200"><span class="font-semibold text-slate-400">${label}:</span> <span class="font-bold text-slate-100">${finalValue}</span></p>`;
         }
 
-        function statTier(statName, rawValue, groupType) {
+        function statTier(statName, rawValue, groupType, fullStats = {}) {
             const valueText = String(rawValue ?? "");
             const numeric = parseFloat(valueText.replace(/[^0-9.\-]/g, ""));
             if (!Number.isFinite(numeric)) return { markerClass: "bg-slate-400", label: "No Data", colorClass: "text-slate-300", ringClass: "border-slate-700" };
+            if (groupType === "hitting") {
+                const paNum = parseFloat(String((fullStats || {}).PA ?? "").replace(/[^0-9.\-]/g, ""));
+                const hasMinPa = Number.isFinite(paNum) && paNum >= 200;
+                const volumeRules = {
+                    "R": { elite: 90, above: 65 },
+                    "HR": { elite: 35, above: 22 },
+                    "RBI": { elite: 95, above: 70 },
+                    "H": { elite: 160, above: 130 },
+                    "BB": { elite: 75, above: 55 },
+                    "SB": { elite: 25, above: 12 }
+                };
+                const vr = volumeRules[statName];
+                if (vr) {
+                    if (!hasMinPa) {
+                        return { markerClass: "bg-orange-300", label: "Context (min 200 PA)", colorClass: "text-orange-300", ringClass: "border-orange-500/50" };
+                    }
+                    if (numeric >= vr.elite) return { markerClass: "bg-emerald-400", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
+                    if (numeric >= vr.above) return { markerClass: "bg-sky-400", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
+                    return { markerClass: "bg-orange-300", label: "Context", colorClass: "text-orange-300", ringClass: "border-orange-500/50" };
+                }
+            }
             const hitters = {
                 "AVG": [0.290, 0.265, 0.240], "OBP": [0.370, 0.340, 0.315], "SLG": [0.500, 0.450, 0.400], "OPS": [0.870, 0.790, 0.720],
                 "BB%": [12, 9, 7], "K%": [17, 22, 27], "Barrel %": [12, 9, 6], "Hard Hit %": [50, 42, 35],
@@ -286,12 +361,12 @@
             return "";
         }
 
-        function renderStatsGrid(stats, groupType, leaderMap = {}) {
-            const entries = Object.entries(stats || {});
+        function renderStatsGrid(stats, groupType, leaderMap = {}, orderList = []) {
+            const entries = orderedEntries(stats, orderList);
             if (!entries.length) return `<p class="text-slate-400">No stats available.</p>`;
             return `<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
                 ${entries.map(([name, value]) => {
-                    const tier = statTier(name, value, groupType);
+                    const tier = statTier(name, value, groupType, stats || {});
                     const leaderMeta = leaderMap[name];
                     const glow = leaderGlowClass(leaderMeta);
                     const label = leaderLabel(leaderMeta);
@@ -315,6 +390,27 @@
             </article>`;
         }
 
+        function compareModeLabel(mode) {
+            const y = currentYear;
+            if (mode === "currentseason") return `Current Season (${y})`;
+            if (mode === "lastseason") return `Last Season (${y - 1})`;
+            if (mode === "last30") return "Last 30 Days";
+            if (mode === "last14") return "Last 14 Days";
+            if (mode === "last7") return "Last 7 Days";
+            if (mode === "custom") {
+                const s = compareStartDateInput.value || "N/A";
+                const e = compareEndDateInput.value || "N/A";
+                return `${s} to ${e}`;
+            }
+            return mode || "Period";
+        }
+
+        function syncCompareModeUI() {
+            const custom = compareMode === "custom";
+            compareDateFromWrap.classList.toggle("hidden", !custom);
+            compareDateToWrap.classList.toggle("hidden", !custom);
+        }
+
         function renderDashboardPlayerLink(row) {
             const name = row?.name || "N/A";
             const safeName = String(name).replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -330,28 +426,44 @@
             }
             const hitting = data.hitting_leaders || {};
             const pitching = data.pitching_leaders || {};
-            const onFire = data.on_fire || [];
+            const onFireHitters = data.on_fire_hitters || data.on_fire || [];
+            const onFirePitchers = data.on_fire_pitchers || [];
             dashboardEl.innerHTML = `
                 <div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4 md:p-5">
                     <div class="mb-3 flex flex-wrap items-end gap-2">
                         <h3 class="text-lg font-extrabold text-orange-300">Quick Dashboard</h3>
                         <p class="text-xs font-semibold tracking-wide text-slate-400">League View</p>
                     </div>
-                    <div class="mb-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
-                        <div class="mb-1 flex items-center justify-between gap-2">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-orange-300">Players On Fire</p>
-                            <p class="text-[11px] text-slate-400">${data.on_fire_label || "Last 7 Days"}</p>
+                    <div class="mb-3 grid gap-3 xl:grid-cols-2">
+                        <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-orange-300">Hitters On Fire</p>
+                                <p class="text-[11px] text-slate-400">${data.on_fire_label || "Last 7 Days"}</p>
+                            </div>
+                            <div class="space-y-1">
+                                ${onFireHitters.slice(0, 10).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
+                            </div>
                         </div>
-                        <div class="space-y-1">
-                            ${onFire.slice(0, 6).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(OPS ${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
+                        <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                            <div class="mb-1 flex items-center justify-between gap-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-orange-300">Pitchers On Fire</p>
+                                <p class="text-[11px] text-slate-400">${data.on_fire_label || "Last 7 Days"}</p>
+                            </div>
+                            <div class="space-y-1">
+                                ${onFirePitchers.slice(0, 10).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
+                            </div>
                         </div>
                     </div>
                     <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         ${renderLeadersBlock("HR Leaders", hitting.HR)}
                         ${renderLeadersBlock("OPS Leaders", hitting.OPS)}
                         ${renderLeadersBlock("RBI Leaders", hitting.RBI)}
+                        ${renderLeadersBlock("AVG Leaders", hitting.AVG)}
+                        ${renderLeadersBlock("SB Leaders", hitting.SB)}
                         ${renderLeadersBlock("K Leaders", pitching.K)}
                         ${renderLeadersBlock("ERA Leaders", pitching.ERA)}
+                        ${renderLeadersBlock("WHIP Leaders", pitching.WHIP)}
+                        ${renderLeadersBlock("SV Leaders", pitching.SV)}
                     </div>
                 </div>
             `;
@@ -780,13 +892,33 @@
 
         function openCompareModal() {
             if (!lastViewedPlayer) return;
+            compareMode = currentMode;
+            compareModeSelect.value = compareMode;
+            if (compareMode === "custom") {
+                compareStartDateInput.value = startDateInput.value || "";
+                compareEndDateInput.value = endDateInput.value || "";
+            }
+            syncCompareModeUI();
             comparePlayerA.value = lastViewedPlayer.nombre;
             comparePlayerB.value = "";
-            compareResults.innerHTML = `<p class="text-slate-300">Search player 2 and click Compare.</p>`;
+            compareResults.innerHTML = `<p class="text-slate-300">Search player 2, choose period if needed, and click Compare.</p>`;
             modal.classList.remove("hidden");
             modal.classList.add("flex");
         }
         window.openCompareModal = openCompareModal;
+        function openCompareModalBlank() {
+            compareMode = "currentseason";
+            compareModeSelect.value = compareMode;
+            compareStartDateInput.value = "";
+            compareEndDateInput.value = "";
+            syncCompareModeUI();
+            comparePlayerA.value = "";
+            comparePlayerB.value = "";
+            compareResults.innerHTML = `<p class="text-slate-300">Type both players, pick period, and click Compare.</p>`;
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+        }
+        window.openCompareModalBlank = openCompareModalBlank;
         function closeCompareModal() {
             modal.classList.add("hidden");
             modal.classList.remove("flex");
@@ -834,37 +966,58 @@
                 </div>
             </div>
             ${trendHtml}
-            ${hasHitting ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Hitting Snapshot (${periodLabel})</h3>${renderStatsGrid(data.hitting_stats, "hitting", (data.leader_highlights || {}).hitting || {})}</div>` : ""}
-            ${hasPitching ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Pitching Snapshot (${periodLabel})</h3>${renderStatsGrid(data.pitching_stats, "pitching", (data.leader_highlights || {}).pitching || {})}</div>` : ""}
-            ${hasHitting ? `<div><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Contact Quality (${data.savant_period_label || periodLabel})</h3>${renderStatsGrid(data.savant_hitting || {}, "hitting")}</div>` : ""}
-            ${hasPitching ? `<div class="mt-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Pitch Quality (${periodLabel})</h3>${renderStatsGrid(data.savant_pitching || {}, "pitching")}</div>` : ""}
+            ${hasHitting ? `<div class="mb-6"><h3 class="text-lg font-bold text-orange-300">Hitting Snapshot (${periodLabel})</h3><p class="mb-3 text-xs text-slate-400">Volume tags (R, HR, RBI, H, BB, SB): only Above Avg/Elite with minimum 200 PA.</p>${renderStatsGrid(data.hitting_stats, "hitting", (data.leader_highlights || {}).hitting || {}, HITTING_ORDER)}</div>` : ""}
+            ${hasPitching ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Pitching Snapshot (${periodLabel})</h3>${renderStatsGrid(data.pitching_stats, "pitching", (data.leader_highlights || {}).pitching || {}, PITCHING_ORDER)}</div>` : ""}
+            ${hasHitting ? `<div><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Contact Quality (${data.savant_period_label || periodLabel})</h3>${renderStatsGrid(data.savant_hitting || {}, "hitting", {}, SAVANT_HITTING_ORDER)}</div>` : ""}
+            ${hasPitching ? `<div class="mt-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Pitch Quality (${periodLabel})</h3>${renderStatsGrid(data.savant_pitching || {}, "pitching", {}, SAVANT_PITCHING_ORDER)}</div>` : ""}
             ${decisionHtml}`;
         }
 
         function normalizeVal(v) { return v === undefined || v === null || v === "" ? "N/A" : String(v); }
         function parseMetric(v) { const n = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : null; }
-        function lowerIsBetter(metric) { return ["ERA", "WHIP", "BB", "H", "BB/9", "K%", "Avg EV Allowed", "Hard Hit % Allowed"].includes(metric); }
-        function compareClass(metric, aVal, bVal, side) {
+        function compareClass(metric, aVal, bVal, side, sectionTitle = "") {
             const a = parseMetric(aVal), b = parseMetric(bVal);
             if (a === null || b === null || a === b) return "";
             if (["Avg Launch Angle"].includes(metric)) return "";
-            const aWins = lowerIsBetter(metric) ? a < b : a > b;
+            const isPitchingSection = /pitching/i.test(sectionTitle);
+            const isHittingSection = /hitting/i.test(sectionTitle);
+
+            let lowerBetter = false;
+            if (isPitchingSection) {
+                lowerBetter = ["ERA", "WHIP", "BB", "H", "BB/9", "Avg EV Allowed", "Hard Hit % Allowed"].includes(metric);
+            } else if (isHittingSection) {
+                lowerBetter = ["K", "K%"].includes(metric);
+            } else {
+                lowerBetter = ["ERA", "WHIP", "BB", "H", "BB/9", "Avg EV Allowed", "Hard Hit % Allowed", "K", "K%"].includes(metric);
+            }
+
+            const aWins = lowerBetter ? a < b : a > b;
             return (side === "a" && aWins) || (side === "b" && !aWins) ? "text-emerald-300 font-bold drop-shadow-[0_0_6px_rgba(16,185,129,0.65)]" : "";
         }
 
-        function mergedMetricRows(aStats, bStats) { return Array.from(new Set([...Object.keys(aStats || {}), ...Object.keys(bStats || {})])); }
+        function mergedMetricRows(aStats, bStats, orderList = []) {
+            const aOrdered = orderedEntries(aStats || {}, orderList).map(([k]) => k);
+            const bOrdered = orderedEntries(bStats || {}, orderList).map(([k]) => k);
+            return Array.from(new Set([...aOrdered, ...bOrdered]));
+        }
         function renderCompareSection(title, aStats, bStats, aName, bName) {
-            const rows = mergedMetricRows(aStats, bStats); if (!rows.length) return "";
+            let orderList = [];
+            if (/hitting snapshot/i.test(title)) orderList = HITTING_ORDER;
+            else if (/pitching snapshot/i.test(title)) orderList = PITCHING_ORDER;
+            else if (/savant hitting/i.test(title)) orderList = SAVANT_HITTING_ORDER;
+            else if (/savant pitching/i.test(title)) orderList = SAVANT_PITCHING_ORDER;
+            const rows = mergedMetricRows(aStats, bStats, orderList);
+            if (!rows.length) return "";
             return `<div class="mb-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/70">
                 <div class="border-b border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-bold text-orange-300">${title}</div>
                 <table class="w-full text-sm">
                     <thead class="bg-slate-800/60 text-slate-300"><tr><th class="px-3 py-2 text-left">Metric</th><th class="px-3 py-2 text-center">${aName}</th><th class="px-3 py-2 text-center">${bName}</th></tr></thead>
-                    <tbody>${rows.map(k => { const av = normalizeVal((aStats || {})[k]); const bv = normalizeVal((bStats || {})[k]); return `<tr class="border-t border-slate-800"><td class="px-3 py-2 font-semibold text-orange-200">${k}</td><td class="px-3 py-2 text-center ${compareClass(k, av, bv, "a")}">${av}</td><td class="px-3 py-2 text-center ${compareClass(k, av, bv, "b")}">${bv}</td></tr>`; }).join("")}</tbody>
+                    <tbody>${rows.map(k => { const av = normalizeVal((aStats || {})[k]); const bv = normalizeVal((bStats || {})[k]); return `<tr class="border-t border-slate-800"><td class="px-3 py-2 font-semibold text-orange-200">${k}</td><td class="px-3 py-2 text-center ${compareClass(k, av, bv, "a", title)}">${av}</td><td class="px-3 py-2 text-center ${compareClass(k, av, bv, "b", title)}">${bv}</td></tr>`; }).join("")}</tbody>
                 </table>
             </div>`;
         }
         function renderCompareView(a, b) {
-            return `<p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-300">Comparing Period: ${a.stats_period_label || currentMode}</p>
+            return `<p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-300">Comparing Period: ${compareModeLabel(compareMode)}</p>
             <div class="mb-4 grid gap-3 md:grid-cols-2">
                 <div class="rounded-xl border border-slate-700 bg-slate-800/75 p-3"><div class="flex items-center gap-3"><img src="${a.foto_url}" class="h-16 w-16 rounded-lg border border-orange-400 object-cover"><div><p class="font-bold">${a.nombre}</p><p class="text-xs text-orange-300">${a.equipo} - ${a.posicion}</p></div></div></div>
                 <div class="rounded-xl border border-slate-700 bg-slate-800/75 p-3"><div class="flex items-center justify-end gap-3 text-right"><div><p class="font-bold">${b.nombre}</p><p class="text-xs text-orange-300">${b.equipo} - ${b.posicion}</p></div><img src="${b.foto_url}" class="h-16 w-16 rounded-lg border border-orange-400 object-cover"></div></div>
@@ -907,9 +1060,15 @@
         function selectCompareSuggestion(target, playerName) { if (target === "a") comparePlayerA.value = playerName; else comparePlayerB.value = playerName; hideCompareAutocomplete(); }
         window.selectCompareSuggestion = selectCompareSuggestion;
 
-        function buildQueryParams(selectedPlayerId) {
-            const params = new URLSearchParams(); params.set("mode", currentMode); if (selectedPlayerId) params.set("player_id", selectedPlayerId);
-            if (currentMode === "custom") { const s = startDateInput.value; const e = endDateInput.value; if (!s || !e) return { error: "Select both dates for custom range." }; params.set("start_date", s); params.set("end_date", e); }
+        function buildQueryParams(selectedPlayerId, queryOptions = {}) {
+            const modeToUse = queryOptions.mode || currentMode;
+            const params = new URLSearchParams(); params.set("mode", modeToUse); if (selectedPlayerId) params.set("player_id", selectedPlayerId);
+            if (modeToUse === "custom") {
+                const s = queryOptions.startDate || startDateInput.value;
+                const e = queryOptions.endDate || endDateInput.value;
+                if (!s || !e) return { error: "Select both dates for custom range." };
+                params.set("start_date", s); params.set("end_date", e);
+            }
             return { params };
         }
 
@@ -946,8 +1105,8 @@
             throw lastErr || new Error("Request failed");
         }
 
-        async function fetchPlayerByName(name, selectedPlayerId = null) {
-            const built = buildQueryParams(selectedPlayerId); if (built.error) return { error: built.error };
+        async function fetchPlayerByName(name, selectedPlayerId = null, queryOptions = {}) {
+            const built = buildQueryParams(selectedPlayerId, queryOptions); if (built.error) return { error: built.error };
             const url = `${API_BASE}/jugador/${encodeURIComponent(name || "player")}?${built.params.toString()}`;
             try {
                 const data = await fetchJsonWithRetry(
@@ -978,10 +1137,22 @@
         async function runModalCompare() {
             const aName = comparePlayerA.value.trim(); const bName = comparePlayerB.value.trim();
             if (!aName || !bName) return compareResults.innerHTML = `<p class="text-red-400">Type both player names.</p>`;
+            compareMode = compareModeSelect.value || "currentseason";
+            const compareQuery = { mode: compareMode };
+            if (compareMode === "custom") {
+                if (!compareStartDateInput.value || !compareEndDateInput.value) {
+                    return compareResults.innerHTML = `<p class="text-red-400">Select custom From/To dates.</p>`;
+                }
+                compareQuery.startDate = compareStartDateInput.value;
+                compareQuery.endDate = compareEndDateInput.value;
+            }
             hideCompareAutocomplete();
             compareResults.innerHTML = `<p class="text-orange-300">Comparing...</p>`;
             try {
-                const [a, b] = await Promise.all([fetchPlayerByName(aName), fetchPlayerByName(bName)]);
+                const [a, b] = await Promise.all([
+                    fetchPlayerByName(aName, null, compareQuery),
+                    fetchPlayerByName(bName, null, compareQuery)
+                ]);
                 if (a.error || b.error) return compareResults.innerHTML = `<p class="text-red-400">${a.error || b.error}</p>`;
                 if (a.disambiguation || b.disambiguation) return compareResults.innerHTML = `<p class="text-red-400">Use a more specific name (team/position hint) for compare.</p>`;
                 compareResults.innerHTML = renderCompareView(a, b);
@@ -1004,6 +1175,10 @@
             selectedYahooLeague = yahooLeagueSelect.value || "";
             renderYahooStatus();
             loadYahooLeagueContext(selectedYahooLeague);
+        });
+        compareModeSelect.addEventListener("change", () => {
+            compareMode = compareModeSelect.value || "currentseason";
+            syncCompareModeUI();
         });
         modal.addEventListener("click", (e) => { if (e.target === modal) closeCompareModal(); });
 
@@ -1030,6 +1205,8 @@
         const tabLast = document.getElementById("tabLastSeason");
         if (tabCurrent) tabCurrent.textContent = `Current Season (${currentYear})`;
         if (tabLast) tabLast.textContent = `Last Season (${currentYear - 1})`;
+        compareModeSelect.value = compareMode;
+        syncCompareModeUI();
         setActivePeriodTab();
         fetchDashboard();
         fetchWaiverScanner();

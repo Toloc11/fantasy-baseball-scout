@@ -1004,20 +1004,22 @@ def _hitting_stats(mlb_id: int, period_req: dict):
     k_pct = (so / pa * 100.0) if pa > 0 else None
 
     return {
+        "PA": str(stat.get("plateAppearances", "N/A")),
+        "AB": str(stat.get("atBats", "N/A")),
+        "H": str(stat.get("hits", "N/A")),
         "R": str(stat.get("runs", "N/A")),
-        "AVG": _to_decimal(stat.get("avg"), 3),
-        "OBP": _to_decimal(stat.get("obp"), 3),
-        "SLG": _to_decimal(stat.get("slg"), 3),
-        "OPS": _to_decimal(stat.get("ops"), 3),
         "HR": str(stat.get("homeRuns", "N/A")),
         "RBI": str(stat.get("rbi", "N/A")),
         "BB": str(stat.get("baseOnBalls", "N/A")),
         "K": str(stat.get("strikeOuts", "N/A")),
         "SB": str(stat.get("stolenBases", "N/A")),
-        "SLAM": str(stat.get("grandSlams", "N/A")),
-        "PA": str(stat.get("plateAppearances", "N/A")),
+        "AVG": _to_decimal(stat.get("avg"), 3),
+        "OBP": _to_decimal(stat.get("obp"), 3),
+        "SLG": _to_decimal(stat.get("slg"), 3),
+        "OPS": _to_decimal(stat.get("ops"), 3),
         "BB%": _to_percent(bb_pct),
         "K%": _to_percent(k_pct),
+        "SLAM": str(stat.get("grandSlams", "N/A")),
     }
 
 
@@ -1152,6 +1154,8 @@ def _hitting_savant_from_season_row(row):
         "Barrels / PA": _to_rate(brl_pa),
         "Sweet Spot %": _to_percent(row.get("anglesweetspotpercent")),
         "Avg Launch Angle": _to_num(row.get("avg_hit_angle"), 1),
+        "xBA": _to_decimal(row.get("xba"), 3),
+        "xSLG": _to_decimal(row.get("xslg"), 3),
     }
 
 
@@ -1195,6 +1199,76 @@ def _hitting_savant_from_window(df: pd.DataFrame):
         out["Sweet Spot %"] = "N/A"
         out["Avg Launch Angle"] = "N/A"
 
+    est_ba_raw = df.get("estimated_ba_using_speedangle")
+    est_slg_raw = df.get("estimated_slg_using_speedangle")
+    est_ba = pd.to_numeric(est_ba_raw, errors="coerce") if est_ba_raw is not None else pd.Series(dtype="float64")
+    est_slg = pd.to_numeric(est_slg_raw, errors="coerce") if est_slg_raw is not None else pd.Series(dtype="float64")
+    out["xBA"] = _to_decimal(est_ba.mean(), 3) if hasattr(est_ba, "notna") and est_ba.notna().any() else "N/A"
+    out["xSLG"] = _to_decimal(est_slg.mean(), 3) if hasattr(est_slg, "notna") and est_slg.notna().any() else "N/A"
+
+    return out
+
+
+def _build_hot_board(
+    group: str,
+    metric_map: dict,
+    season: Optional[int],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    game_type: str,
+    limit: int = 30,
+    top_n: int = 10,
+):
+    bucket = {}
+    for metric_label, cfg in metric_map.items():
+        category = cfg["category"]
+        weight = float(cfg.get("weight", 1.0))
+        try:
+            rows = _leaderboard_rows(
+                group=group,
+                category=category,
+                season=season,
+                start_date=start_date,
+                end_date=end_date,
+                game_type=game_type,
+                limit=limit,
+            )
+        except Exception:
+            rows = []
+
+        for row in rows:
+            try:
+                player_id = int(row.get("id"))
+                rank = int(row.get("rank"))
+            except Exception:
+                continue
+            item = bucket.setdefault(
+                player_id,
+                {
+                    "id": player_id,
+                    "name": row.get("name", "N/A"),
+                    "team": row.get("team", "N/A"),
+                    "score": 0.0,
+                    "metrics": {},
+                },
+            )
+            item["score"] += (limit - rank + 1) * weight
+            item["metrics"][metric_label] = {"rank": rank, "value": row.get("value", "N/A")}
+
+    ranked = sorted(bucket.values(), key=lambda x: x["score"], reverse=True)
+    out = []
+    for idx, item in enumerate(ranked[:top_n], start=1):
+        best = sorted(item["metrics"].items(), key=lambda kv: kv[1]["rank"])[:2]
+        highlights = [f"{k} {v['value']}" for k, v in best]
+        out.append(
+            {
+                "rank": idx,
+                "id": item["id"],
+                "name": item["name"],
+                "team": item["team"],
+                "value": " | ".join(highlights) if highlights else f"Score {round(item['score'], 1)}",
+            }
+        )
     return out
 
 
@@ -1488,7 +1562,7 @@ def api_dashboard(
         except Exception:
             pitching_boards[label] = []
 
-    # "On fire" snapshot = last 7 days OPS leaders.
+    # "On fire" snapshot = rolling 7-day trend board, split for hitters/pitchers.
     if use_spring:
         spring_start_d = date(2026, 2, 20)
         spring_end_d = date(2026, 3, 31)
@@ -1497,25 +1571,55 @@ def api_dashboard(
     else:
         fire_end = date.today()
         fire_start = fire_end - timedelta(days=6)
+    fire_start_s = fire_start.isoformat()
+    fire_end_s = fire_end.isoformat()
+    on_fire_hitter_map = {
+        "OPS": {"category": "ops", "weight": 2.6},
+        "HR": {"category": "homeRuns", "weight": 2.0},
+        "RBI": {"category": "runsBattedIn", "weight": 1.7},
+        "AVG": {"category": "battingAverage", "weight": 1.4},
+    }
+    on_fire_pitcher_map = {
+        "ERA": {"category": "era", "weight": 2.4},
+        "WHIP": {"category": "whip", "weight": 2.2},
+        "K": {"category": "strikeouts", "weight": 2.0},
+        "K/9": {"category": "strikeoutsPer9Inn", "weight": 1.5},
+    }
     try:
-        on_fire = _leaderboard_rows(
-            "hitting",
-            "ops",
-            None,
-            fire_start.isoformat(),
-            fire_end.isoformat(),
+        on_fire_hitters = _build_hot_board(
+            group="hitting",
+            metric_map=on_fire_hitter_map,
+            season=None,
+            start_date=fire_start_s,
+            end_date=fire_end_s,
             game_type=game_type,
-            limit=10,
+            limit=30,
+            top_n=10,
         )
     except Exception:
-        on_fire = []
+        on_fire_hitters = []
+    try:
+        on_fire_pitchers = _build_hot_board(
+            group="pitching",
+            metric_map=on_fire_pitcher_map,
+            season=None,
+            start_date=fire_start_s,
+            end_date=fire_end_s,
+            game_type=game_type,
+            limit=30,
+            top_n=10,
+        )
+    except Exception:
+        on_fire_pitchers = []
 
     return {
         "stats_mode": period_req.get("mode"),
         "stats_period_label": period_req.get("label"),
         "hitting_leaders": hitting_boards,
         "pitching_leaders": pitching_boards,
-        "on_fire": on_fire,
+        "on_fire": on_fire_hitters,
+        "on_fire_hitters": on_fire_hitters,
+        "on_fire_pitchers": on_fire_pitchers,
         "on_fire_label": f"Last 7 Days ({fire_start.isoformat()} to {fire_end.isoformat()})",
     }
 
