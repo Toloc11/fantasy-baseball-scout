@@ -116,6 +116,7 @@
 
         <section id="contenedor-resultado"></section>
 
+        <section id="yahooLeagueSection" class="mt-8"></section>
         <section id="dashboardSection" class="mt-8"></section>
         <section id="waiverSection" class="mt-8"></section>
         <section id="watchlistSection" class="mt-8"></section>
@@ -147,13 +148,14 @@
     </div>
 
     <script>
-        const API_BASE = "http://127.0.0.1:8000";
+        const API_BASE = "https://fantasy-baseball-scout.onrender.com";
         const inputEl = document.getElementById("busquedaInput");
         const boxEl = document.getElementById("autocompleteBox");
         const customWrap = document.getElementById("customRangeWrap");
         const dashboardEl = document.getElementById("dashboardSection");
         const waiverEl = document.getElementById("waiverSection");
         const watchlistEl = document.getElementById("watchlistSection");
+        const yahooLeagueEl = document.getElementById("yahooLeagueSection");
         const yahooConnectBtn = document.getElementById("yahooConnectBtn");
         const yahooDisconnectBtn = document.getElementById("yahooDisconnectBtn");
         const yahooLeagueSelect = document.getElementById("yahooLeagueSelect");
@@ -377,6 +379,51 @@
             yahooStatusText.textContent = `Yahoo: connected${leagueLabel}`;
         }
 
+        function renderYahooLeagueContext(data) {
+            if (!data || data.error) {
+                yahooLeagueEl.innerHTML = "";
+                return;
+            }
+            const cats = (data.stat_categories || [])
+                .map(c => c.display_name || c.name)
+                .filter(Boolean)
+                .slice(0, 20);
+            const teams = data.teams || [];
+            yahooLeagueEl.innerHTML = `<div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4 md:p-5">
+                <div class="mb-3 flex flex-wrap items-end justify-between gap-2">
+                    <h3 class="text-lg font-extrabold text-orange-300">Yahoo League Context</h3>
+                    <p class="text-xs text-slate-400">${data.league_key || ""}</p>
+                </div>
+                <p class="text-sm text-slate-300"><span class="font-semibold text-slate-100">${data.league_name || "League"}</span> | ${data.scoring_type || "N/A"} | Teams: ${data.max_teams || "N/A"}</p>
+                <div class="mt-3 grid gap-3 md:grid-cols-2">
+                    <article class="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                        <p class="mb-2 text-sm font-bold text-orange-300">Stat Categories</p>
+                        <p class="text-xs text-slate-300">${cats.join(" | ") || "No categories found."}</p>
+                    </article>
+                    <article class="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                        <p class="mb-2 text-sm font-bold text-orange-300">Standings Snapshot</p>
+                        <div class="space-y-1">
+                            ${teams.slice(0, 8).map(t => `<p class="text-xs text-slate-200">#${t.rank || "-"} ${t.name || "Team"} <span class="text-orange-300">${t.points ? `(${t.points})` : ""}</span></p>`).join("") || "<p class='text-xs text-slate-400'>No standings data.</p>"}
+                        </div>
+                    </article>
+                </div>
+            </div>`;
+        }
+
+        async function loadYahooLeagueContext(leagueKey) {
+            if (!leagueKey) {
+                yahooLeagueEl.innerHTML = "";
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/auth/yahoo/league_context?league_key=${encodeURIComponent(leagueKey)}`);
+                const data = await response.json();
+                renderYahooLeagueContext(data);
+            } catch (_) {
+                yahooLeagueEl.innerHTML = "";
+            }
+        }
+
         async function loadYahooLeagues() {
             if (!yahooConnected) return;
             try {
@@ -387,6 +434,7 @@
                 yahooLeagueSelect.innerHTML = `<option value="">Select Yahoo League</option>` +
                     yahooLeagues.map(l => `<option value="${l.league_key}">${l.name}</option>`).join("");
                 if (selectedYahooLeague) yahooLeagueSelect.value = selectedYahooLeague;
+                if (selectedYahooLeague) await loadYahooLeagueContext(selectedYahooLeague);
             } catch (_) {}
         }
 
@@ -906,7 +954,7 @@
         yahooLeagueSelect.addEventListener("change", () => {
             selectedYahooLeague = yahooLeagueSelect.value || "";
             renderYahooStatus();
-            // league-specific scoring/pipeline will attach here in next phase.
+            loadYahooLeagueContext(selectedYahooLeague);
         });
         modal.addEventListener("click", (e) => { if (e.target === modal) closeCompareModal(); });
 
@@ -941,4 +989,3 @@
     </script>
 </body>
 </html>
-

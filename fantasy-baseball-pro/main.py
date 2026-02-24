@@ -607,6 +607,67 @@ def _extract_leagues(node):
     return out
 
 
+def _deep_find_first(node, key: str):
+    if isinstance(node, dict):
+        if key in node:
+            return node.get(key)
+        for v in node.values():
+            got = _deep_find_first(v, key)
+            if got is not None:
+                return got
+    elif isinstance(node, list):
+        for item in node:
+            got = _deep_find_first(item, key)
+            if got is not None:
+                return got
+    return None
+
+
+def _extract_team_rows(node):
+    rows = []
+    if isinstance(node, dict):
+        if "team_key" in node and "name" in node:
+            rows.append(
+                {
+                    "team_key": node.get("team_key"),
+                    "name": node.get("name"),
+                    "url": node.get("url"),
+                    "rank": node.get("team_standings", {}).get("rank") if isinstance(node.get("team_standings"), dict) else None,
+                    "points": node.get("team_standings", {}).get("points", {}).get("total")
+                    if isinstance(node.get("team_standings"), dict)
+                    else None,
+                }
+            )
+        for v in node.values():
+            rows.extend(_extract_team_rows(v))
+    elif isinstance(node, list):
+        for item in node:
+            rows.extend(_extract_team_rows(item))
+    return rows
+
+
+def _extract_stat_categories(node):
+    out = []
+    if isinstance(node, dict):
+        has_id = "stat_id" in node
+        has_name = "name" in node
+        if has_id or has_name:
+            out.append(
+                {
+                    "stat_id": node.get("stat_id"),
+                    "name": node.get("name"),
+                    "sort_order": node.get("sort_order"),
+                    "display_name": node.get("display_name"),
+                }
+            )
+        for v in node.values():
+            out.extend(_extract_stat_categories(v))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_extract_stat_categories(item))
+    return out
+
+
 @lru_cache(maxsize=4096)
 def _leaderboard_rows(
     group: str,
@@ -1566,6 +1627,47 @@ def auth_yahoo_leagues():
             dedup[key] = lg
     out = sorted(dedup.values(), key=lambda x: str(x.get("name", "")).lower())
     return {"leagues": out}
+
+
+@app.get("/auth/yahoo/league_context")
+def auth_yahoo_league_context(league_key: str):
+    if not league_key:
+        return {"error": "league_key is required"}
+    if not _yahoo_refresh_if_needed():
+        return {"error": "Yahoo not connected"}
+
+    try:
+        settings_data = _yahoo_api_get_json(
+            f"https://fantasysports.yahooapis.com/fantasy/v2/league/{urllib.parse.quote(league_key)}/settings?format=json"
+        )
+        standings_data = _yahoo_api_get_json(
+            f"https://fantasysports.yahooapis.com/fantasy/v2/league/{urllib.parse.quote(league_key)}/standings?format=json"
+        )
+        teams_data = _yahoo_api_get_json(
+            f"https://fantasysports.yahooapis.com/fantasy/v2/league/{urllib.parse.quote(league_key)}/teams?format=json"
+        )
+    except Exception as e:
+        return {"error": f"Yahoo league context fetch failed: {e}"}
+
+    scoring_type = _deep_find_first(settings_data, "scoring_type")
+    league_name = _deep_find_first(settings_data, "name") or _deep_find_first(teams_data, "name")
+    max_teams = _deep_find_first(settings_data, "num_teams")
+    categories = _extract_stat_categories(settings_data)
+    teams_rows = _extract_team_rows(standings_data) or _extract_team_rows(teams_data)
+    teams_rows = [t for t in teams_rows if t.get("team_key")]
+    teams_rows = sorted(
+        teams_rows,
+        key=lambda x: (int(x["rank"]) if str(x.get("rank", "")).isdigit() else 9999, str(x.get("name", ""))),
+    )
+
+    return {
+        "league_key": league_key,
+        "league_name": league_name,
+        "scoring_type": scoring_type,
+        "max_teams": max_teams,
+        "stat_categories": categories[:40],
+        "teams": teams_rows[:20],
+    }
 
 
 if __name__ == "__main__":
