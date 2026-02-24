@@ -1080,6 +1080,38 @@ def _edad_desde_fecha(birth_date_str: str):
         return "N/A"
 
 
+def _ip_text_to_float(ip_text: str):
+    """
+    MLB innings format can be X.0, X.1, X.2 where .1=.333 and .2=.667 innings.
+    """
+    if not ip_text:
+        return 0.0
+    s = str(ip_text).strip()
+    try:
+        if "." not in s:
+            return float(s)
+        whole, frac = s.split(".", 1)
+        w = float(whole or 0)
+        if frac == "0":
+            return w
+        if frac == "1":
+            return w + (1.0 / 3.0)
+        if frac == "2":
+            return w + (2.0 / 3.0)
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def _is_meaningful_pitching_profile(primary_pos: str, pitching_stats: dict):
+    pitcher_positions = {"P", "SP", "RP", "CP", "TWP"}
+    if primary_pos in pitcher_positions:
+        return True
+    ip_num = _ip_text_to_float((pitching_stats or {}).get("IP", "0"))
+    # Position-player mop-up innings should not classify as pitching profile.
+    return ip_num >= 8.0
+
+
 @lru_cache(maxsize=256)
 def _batter_statcast_window(mlb_id: int, start_date: str, end_date: str):
     try:
@@ -1356,6 +1388,11 @@ def api_get_jugador(
         leader_highlights = {"hitting": {}, "pitching": {}}
 
     primary_pos = (jugador.get("primaryPosition", {}).get("abbreviation", "") or "").upper()
+    has_meaningful_pitching = _is_meaningful_pitching_profile(primary_pos, pitching_stats)
+    if not has_meaningful_pitching:
+        pitching_stats = {}
+        savant_pitching = {}
+
     is_two_way = primary_pos == "TWP" or (bool(hitting_stats) and bool(pitching_stats))
 
     return {
