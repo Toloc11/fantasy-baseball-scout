@@ -34,6 +34,7 @@ YAHOO_CLIENT_ID = os.getenv("YAHOO_CLIENT_ID", "").strip()
 YAHOO_CLIENT_SECRET = os.getenv("YAHOO_CLIENT_SECRET", "").strip()
 YAHOO_REDIRECT_URI = os.getenv("YAHOO_REDIRECT_URI", "http://127.0.0.1:8000/auth/yahoo/callback").strip()
 FBS_FRONTEND_URL = os.getenv("FBS_FRONTEND_URL", "").strip()
+FBS_LIGHT_MODE = os.getenv("FBS_LIGHT_MODE", "1" if os.getenv("RENDER") else "0").strip() == "1"
 
 # Local beta storage (single-process). For production, move to DB/session store.
 _yahoo_auth_state: Optional[str] = None
@@ -46,25 +47,31 @@ MLB_SEASON = CURRENT_SEASON
 SAVANT_SEASON = CURRENT_SEASON
 
 print(f"Loading Statcast data for {CURRENT_SEASON}...")
-try:
-    df_savant = statcast_batter_exitvelo_barrels(CURRENT_SEASON)
-    # Preseason/early-season responses may be near-empty; fallback to last season.
-    if df_savant.empty or len(df_savant) < 50:
-        raise ValueError(f"Savant {CURRENT_SEASON} dataset too small ({len(df_savant)} rows)")
-    print(f"Statcast data loaded for {CURRENT_SEASON}.")
-except Exception as e:
-    print(f"Statcast current-season load error: {e}")
+if FBS_LIGHT_MODE:
+    print("FBS_LIGHT_MODE enabled: skipping startup Savant preload to reduce RAM.")
+    df_savant = pd.DataFrame()
+else:
     try:
-        SAVANT_SEASON = LAST_SEASON
-        df_savant = statcast_batter_exitvelo_barrels(SAVANT_SEASON)
-        print(f"Statcast fallback loaded for {SAVANT_SEASON}.")
-    except Exception as e2:
-        print(f"Statcast fallback error: {e2}")
-        df_savant = pd.DataFrame()
+        df_savant = statcast_batter_exitvelo_barrels(CURRENT_SEASON)
+        # Preseason/early-season responses may be near-empty; fallback to last season.
+        if df_savant.empty or len(df_savant) < 50:
+            raise ValueError(f"Savant {CURRENT_SEASON} dataset too small ({len(df_savant)} rows)")
+        print(f"Statcast data loaded for {CURRENT_SEASON}.")
+    except Exception as e:
+        print(f"Statcast current-season load error: {e}")
+        try:
+            SAVANT_SEASON = LAST_SEASON
+            df_savant = statcast_batter_exitvelo_barrels(SAVANT_SEASON)
+            print(f"Statcast fallback loaded for {SAVANT_SEASON}.")
+        except Exception as e2:
+            print(f"Statcast fallback error: {e2}")
+            df_savant = pd.DataFrame()
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=2)
 def _savant_batter_season_df(season: int):
+    if FBS_LIGHT_MODE:
+        return pd.DataFrame()
     try:
         df = statcast_batter_exitvelo_barrels(season)
         if isinstance(df, pd.DataFrame):
@@ -74,7 +81,7 @@ def _savant_batter_season_df(season: int):
     return pd.DataFrame()
 
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=256)
 def _get_player_details_by_id(mlb_id: int):
     url = f"https://statsapi.mlb.com/api/v1/people/{mlb_id}"
     params = {"hydrate": "currentTeam,primaryPosition"}
@@ -440,7 +447,7 @@ def _to_num(val, digits=1):
         return "N/A"
 
 
-@lru_cache(maxsize=8192)
+@lru_cache(maxsize=512)
 def _get_stat_line(
     mlb_id: int,
     group: str,
@@ -471,7 +478,7 @@ def _get_stat_line(
     return splits[0].get("stat", {}) or {}
 
 
-@lru_cache(maxsize=2048)
+@lru_cache(maxsize=256)
 def _leaderboard_player_ranks(group: str, category: str, season: int, limit: int = 200):
     url = "https://statsapi.mlb.com/api/v1/stats/leaders"
     params = {
@@ -668,7 +675,7 @@ def _extract_stat_categories(node):
     return out
 
 
-@lru_cache(maxsize=4096)
+@lru_cache(maxsize=512)
 def _leaderboard_rows(
     group: str,
     category: str,
@@ -1073,7 +1080,7 @@ def _edad_desde_fecha(birth_date_str: str):
         return "N/A"
 
 
-@lru_cache(maxsize=4096)
+@lru_cache(maxsize=256)
 def _batter_statcast_window(mlb_id: int, start_date: str, end_date: str):
     try:
         df = statcast_batter(start_date, end_date, mlb_id)
@@ -1160,6 +1167,8 @@ def _hitting_savant_from_window(df: pd.DataFrame):
 
 
 def _hitting_savant_stats(mlb_id: int, period_req: dict):
+    if FBS_LIGHT_MODE:
+        return {}, None, period_req.get("label", "Savant disabled (light mode)")
     stats_type = period_req.get("stats_type")
     # Career Savant aggregation is too expensive for live calls; use latest available season.
     if stats_type == "career":
@@ -1199,7 +1208,7 @@ def _hitting_savant_stats(mlb_id: int, period_req: dict):
     return _hitting_savant_from_window(df), None, period_req.get("label", f"{start_date} to {end_date}")
 
 
-@lru_cache(maxsize=4096)
+@lru_cache(maxsize=256)
 def _pitcher_statcast_window(mlb_id: int, start_date: str, end_date: str):
     try:
         df = statcast_pitcher(start_date, end_date, mlb_id)
@@ -1227,6 +1236,8 @@ def _period_dates_for_savant_pitching(period_req: dict):
 
 
 def _pitching_savant_stats(mlb_id: int, period_req: dict):
+    if FBS_LIGHT_MODE:
+        return {}
     start_date, end_date = _period_dates_for_savant_pitching(period_req)
     if not start_date or not end_date:
         return {}

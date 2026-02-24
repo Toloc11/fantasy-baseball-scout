@@ -244,7 +244,7 @@
         function statTier(statName, rawValue, groupType) {
             const valueText = String(rawValue ?? "");
             const numeric = parseFloat(valueText.replace(/[^0-9.\-]/g, ""));
-            if (!Number.isFinite(numeric)) return { emoji: "-", label: "No Data", colorClass: "text-slate-300", ringClass: "border-slate-700" };
+            if (!Number.isFinite(numeric)) return { markerClass: "bg-slate-400", label: "No Data", colorClass: "text-slate-300", ringClass: "border-slate-700" };
             const hitters = {
                 "AVG": [0.290, 0.265, 0.240], "OBP": [0.370, 0.340, 0.315], "SLG": [0.500, 0.450, 0.400], "OPS": [0.870, 0.790, 0.720],
                 "BB%": [12, 9, 7], "K%": [17, 22, 27], "Barrel %": [12, 9, 6], "Hard Hit %": [50, 42, 35],
@@ -256,18 +256,18 @@
             };
             const map = groupType === "pitching" ? pitchers : hitters;
             const t = map[statName];
-            if (!t) return { emoji: "~", label: "Context", colorClass: "text-orange-300", ringClass: "border-orange-500/50" };
+            if (!t) return { markerClass: "bg-orange-300", label: "Context", colorClass: "text-orange-300", ringClass: "border-orange-500/50" };
             const reverse = ["K%", "ERA", "WHIP", "BB/9", "Avg EV Allowed", "Hard Hit % Allowed"].includes(statName);
             if (!reverse) {
-                if (numeric >= t[0]) return { emoji: "++", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
-                if (numeric >= t[1]) return { emoji: "+", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
-                if (numeric >= t[2]) return { emoji: "=", label: "Average", colorClass: "text-yellow-300", ringClass: "border-yellow-500/50" };
-                return { emoji: "--", label: "Below Avg", colorClass: "text-rose-300", ringClass: "border-rose-500/50" };
+                if (numeric >= t[0]) return { markerClass: "bg-emerald-400", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
+                if (numeric >= t[1]) return { markerClass: "bg-sky-400", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
+                if (numeric >= t[2]) return { markerClass: "bg-yellow-400", label: "Average", colorClass: "text-yellow-300", ringClass: "border-yellow-500/50" };
+                return { markerClass: "bg-rose-400", label: "Below Avg", colorClass: "text-rose-300", ringClass: "border-rose-500/50" };
             }
-            if (numeric <= t[0]) return { emoji: "++", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
-            if (numeric <= t[1]) return { emoji: "+", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
-            if (numeric <= t[2]) return { emoji: "=", label: "Average", colorClass: "text-yellow-300", ringClass: "border-yellow-500/50" };
-            return { emoji: "--", label: "Below Avg", colorClass: "text-rose-300", ringClass: "border-rose-500/50" };
+            if (numeric <= t[0]) return { markerClass: "bg-emerald-400", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
+            if (numeric <= t[1]) return { markerClass: "bg-sky-400", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
+            if (numeric <= t[2]) return { markerClass: "bg-yellow-400", label: "Average", colorClass: "text-yellow-300", ringClass: "border-yellow-500/50" };
+            return { markerClass: "bg-rose-400", label: "Below Avg", colorClass: "text-rose-300", ringClass: "border-rose-500/50" };
         }
 
         function leaderGlowClass(meta) {
@@ -298,7 +298,7 @@
                     const tip = STAT_HELP[name] || "Stat explanation not available yet.";
                     return `<article class="relative rounded-xl border bg-slate-800/80 p-4 ${tier.ringClass} ${glow}">
                         ${label ? `<span class="absolute right-2 top-2 rounded bg-black/40 px-2 py-0.5 text-[10px] font-bold tracking-wide text-orange-200">${label}</span>` : ""}
-                        <p class="text-xs uppercase tracking-wide text-orange-300" title="${tip}">${name}</p><p class="mt-2 text-xl font-black text-white">${value}</p><p class="mt-1 text-xs font-semibold ${tier.colorClass}">${tier.emoji} ${tier.label}</p>
+                        <p class="text-xs uppercase tracking-wide text-orange-300" title="${tip}">${name}</p><p class="mt-2 text-xl font-black text-white">${value}</p><p class="mt-1 inline-flex items-center gap-1 text-xs font-semibold ${tier.colorClass}"><span class="inline-block h-2 w-2 rounded-full ${tier.markerClass}"></span>${tier.label}</p>
                     </article>`;
                 }).join("")}
             </div>`;
@@ -333,18 +333,20 @@
             const onFire = data.on_fire || [];
             dashboardEl.innerHTML = `
                 <div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4 md:p-5">
-                    <div class="mb-4 flex flex-wrap items-end gap-2">
+                    <div class="mb-3 flex flex-wrap items-end gap-2">
                         <h3 class="text-lg font-extrabold text-orange-300">Quick Dashboard</h3>
                         <p class="text-xs font-semibold tracking-wide text-slate-400">League View</p>
                     </div>
-                    <div class="mb-4 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-orange-300">Players On Fire</p>
-                        <p class="mb-2 text-xs text-slate-400">${data.on_fire_label || "Last 14 Days"}</p>
-                        <div class="grid gap-1 md:grid-cols-2">
+                    <div class="mb-3 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-orange-300">Players On Fire</p>
+                            <p class="text-[11px] text-slate-400">${data.on_fire_label || "Last 7 Days"}</p>
+                        </div>
+                        <div class="space-y-1">
                             ${onFire.slice(0, 6).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(OPS ${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
                         </div>
                     </div>
-                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                         ${renderLeadersBlock("HR Leaders", hitting.HR)}
                         ${renderLeadersBlock("OPS Leaders", hitting.OPS)}
                         ${renderLeadersBlock("RBI Leaders", hitting.RBI)}
@@ -734,16 +736,16 @@
             const model = buildDecisionModel(data, trendPack);
             const addTone = model.addScore >= 70 ? "text-emerald-300" : (model.addScore >= 50 ? "text-yellow-300" : "text-rose-300");
             const dropTone = model.dropRisk >= 70 ? "text-rose-300" : (model.dropRisk >= 50 ? "text-yellow-300" : "text-emerald-300");
-            return `<div class="mb-6 grid gap-3 md:grid-cols-2">
-                <article class="rounded-xl border border-emerald-700/40 bg-slate-900/65 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Add Score</p>
-                    <p class="mt-1 text-3xl font-black ${addTone}">${model.addScore}</p>
-                    <div class="mt-2 space-y-1">${model.addReasons.map(r => `<p class="text-xs text-slate-300">${r}</p>`).join("")}</div>
+            return `<div class="mt-5 grid gap-3 md:grid-cols-2">
+                <article class="rounded-xl border border-slate-700 bg-slate-900/55 p-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Add Score</p>
+                    <p class="mt-1 text-2xl font-bold ${addTone}">${model.addScore}</p>
+                    <div class="mt-1 space-y-1">${model.addReasons.map(r => `<p class="text-[11px] text-slate-400">${r}</p>`).join("")}</div>
                 </article>
-                <article class="rounded-xl border border-rose-700/35 bg-slate-900/65 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-rose-300">Drop Risk</p>
-                    <p class="mt-1 text-3xl font-black ${dropTone}">${model.dropRisk}</p>
-                    <div class="mt-2 space-y-1">${model.dropReasons.map(r => `<p class="text-xs text-slate-300">${r}</p>`).join("")}</div>
+                <article class="rounded-xl border border-slate-700 bg-slate-900/55 p-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Drop Risk</p>
+                    <p class="mt-1 text-2xl font-bold ${dropTone}">${model.dropRisk}</p>
+                    <div class="mt-1 space-y-1">${model.dropReasons.map(r => `<p class="text-[11px] text-slate-400">${r}</p>`).join("")}</div>
                 </article>
             </div>`;
         }
@@ -831,12 +833,12 @@
                     </div>
                 </div>
             </div>
-            ${decisionHtml}
             ${trendHtml}
             ${hasHitting ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Hitting Snapshot (${periodLabel})</h3>${renderStatsGrid(data.hitting_stats, "hitting", (data.leader_highlights || {}).hitting || {})}</div>` : ""}
             ${hasPitching ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Pitching Snapshot (${periodLabel})</h3>${renderStatsGrid(data.pitching_stats, "pitching", (data.leader_highlights || {}).pitching || {})}</div>` : ""}
             ${hasHitting ? `<div><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Contact Quality (${data.savant_period_label || periodLabel})</h3>${renderStatsGrid(data.savant_hitting || {}, "hitting")}</div>` : ""}
-            ${hasPitching ? `<div class="mt-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Pitch Quality (${periodLabel})</h3>${renderStatsGrid(data.savant_pitching || {}, "pitching")}</div>` : ""}`;
+            ${hasPitching ? `<div class="mt-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Pitch Quality (${periodLabel})</h3>${renderStatsGrid(data.savant_pitching || {}, "pitching")}</div>` : ""}
+            ${decisionHtml}`;
         }
 
         function normalizeVal(v) { return v === undefined || v === null || v === "" ? "N/A" : String(v); }
@@ -845,6 +847,7 @@
         function compareClass(metric, aVal, bVal, side) {
             const a = parseMetric(aVal), b = parseMetric(bVal);
             if (a === null || b === null || a === b) return "";
+            if (["Avg Launch Angle"].includes(metric)) return "";
             const aWins = lowerIsBetter(metric) ? a < b : a > b;
             return (side === "a" && aWins) || (side === "b" && !aWins) ? "text-emerald-300 font-bold drop-shadow-[0_0_6px_rgba(16,185,129,0.65)]" : "";
         }
