@@ -1,0 +1,944 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fantasy Baseball Scout</title>
+    <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><text y="50" font-size="50">&#9918;</text></svg>'>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background:
+                radial-gradient(1200px 700px at 10% -10%, rgba(245, 158, 11, 0.22), transparent 50%),
+                radial-gradient(900px 500px at 95% 10%, rgba(59, 130, 246, 0.18), transparent 50%),
+                radial-gradient(circle at top, #0f2747 0%, #07172c 58%, #040a15 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        .glass {
+            background: linear-gradient(155deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.52));
+            backdrop-filter: blur(10px);
+        }
+        .team-watermark-wrap {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .team-watermark {
+            width: 500px;
+            height: 500px;
+            transform: translateX(44px);
+            opacity: 0.28;
+            filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.08));
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <main class="glass mx-auto w-full max-w-7xl rounded-3xl border border-slate-700 p-5 shadow-2xl md:p-8">
+        <div class="mb-1 flex items-center justify-end">
+            <button id="homeBtn" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-600 text-slate-300 hover:border-orange-400 hover:text-orange-200" title="Home / Reset" aria-label="Home / Reset">
+                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 10.5L12 3l9 7.5"></path>
+                    <path d="M5 9.5V21h14V9.5"></path>
+                </svg>
+            </button>
+        </div>
+        <h1 id="titleHomeBtn" class="cursor-pointer text-center text-3xl font-black tracking-wide text-orange-300 md:text-4xl">Fantasy Baseball Scout</h1>
+        <p class="mt-1 text-center text-sm font-semibold tracking-wide text-orange-200/90">by Toloc</p>
+        <p class="mb-3 text-center text-xs font-semibold tracking-[0.2em] text-slate-400">v0.3.0-beta</p>
+        <div class="mb-6 flex flex-wrap items-center justify-center gap-2">
+            <button id="yahooConnectBtn" class="rounded-lg border border-emerald-500/70 bg-slate-800 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-slate-700">Connect Yahoo</button>
+            <button id="yahooDisconnectBtn" class="hidden rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700">Disconnect</button>
+            <select id="yahooLeagueSelect" class="hidden rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs text-slate-100">
+                <option value="">Select Yahoo League</option>
+            </select>
+            <span id="yahooStatusText" class="text-xs text-slate-400">Yahoo: not connected</span>
+        </div>
+
+        <div class="mb-4 flex flex-wrap justify-center gap-2" id="periodTabs">
+            <button id="tabCurrentSeason" class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="currentseason">Current Season</button>
+            <button id="tabLastSeason" class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="lastseason">Last Season</button>
+            <button class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="last30">Last 30 Days</button>
+            <button class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="last14">Last 14 Days</button>
+            <button class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="last7">Last 7 Days</button>
+            <button class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="today">Today</button>
+            <button class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="career">Career</button>
+            <button class="period-tab rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm" data-mode="custom">Custom Range</button>
+            <button class="period-tab rounded-lg border border-emerald-500/60 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200" data-mode="spring2026">Spring Training 2026</button>
+        </div>
+
+        <div id="customRangeWrap" class="mb-6 hidden flex-wrap items-end gap-2 rounded-xl border border-slate-700 bg-slate-800/60 p-3">
+            <label class="text-xs text-slate-300">From
+                <span class="ml-1 inline-flex items-center gap-1">
+                    <input type="date" id="startDateInput" class="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white">
+                    <button type="button" onclick="openDatePicker('startDateInput')" class="inline-flex items-center justify-center rounded border border-slate-600 px-2 py-1 text-sm text-orange-200 hover:bg-slate-700" aria-label="Open start date calendar" title="Open calendar">
+                        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                    </button>
+                </span>
+            </label>
+            <label class="text-xs text-slate-300">To
+                <span class="ml-1 inline-flex items-center gap-1">
+                    <input type="date" id="endDateInput" class="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white">
+                    <button type="button" onclick="openDatePicker('endDateInput')" class="inline-flex items-center justify-center rounded border border-slate-600 px-2 py-1 text-sm text-orange-200 hover:bg-slate-700" aria-label="Open end date calendar" title="Open calendar">
+                        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                    </button>
+                </span>
+            </label>
+            <button id="applyCustomBtn" class="rounded-lg bg-orange-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-orange-400">Apply Range</button>
+        </div>
+
+        <div class="mb-6 flex flex-col gap-3 md:flex-row">
+            <div class="relative w-full">
+                <input type="text" id="busquedaInput" placeholder="Type MLB player name"
+                    autocomplete="off"
+                    class="w-full rounded-xl border border-slate-600 bg-slate-800 p-3 pr-10 text-white outline-none ring-orange-400 transition focus:ring-2">
+                <div id="autocompleteBox" class="absolute z-20 mt-2 hidden w-full rounded-xl border border-slate-700 bg-slate-900/95 shadow-xl"></div>
+            </div>
+            <button onclick="buscarJugador()" id="btnBuscar"
+                class="rounded-xl bg-orange-500 px-6 py-3 font-bold text-slate-950 transition hover:bg-orange-400 active:scale-95">
+                Search
+            </button>
+        </div>
+
+        <section id="contenedor-resultado"></section>
+
+        <section id="dashboardSection" class="mt-8"></section>
+        <section id="waiverSection" class="mt-8"></section>
+        <section id="watchlistSection" class="mt-8"></section>
+        <footer class="mt-10 border-t border-slate-800/90 pt-4 text-center text-xs tracking-wide text-slate-500">
+            <p>Copyright © 2026 Felipe Rivera</p>
+            <p class="mt-1">Merida, Yucatan, Mexico | riverafelipe@gmail.com</p>
+        </footer>
+    </main>
+
+    <div id="compareModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/65 p-4">
+        <div class="glass w-full max-w-6xl rounded-2xl border border-slate-700 p-4 md:p-6">
+            <div class="mb-4 flex items-center justify-between">
+                <h3 class="text-xl font-extrabold text-orange-300">Compare Players</h3>
+                <button id="closeCompareModal" class="rounded-full border border-slate-600 px-3 py-1 text-sm text-slate-200 hover:bg-slate-700">X</button>
+            </div>
+            <div class="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <div class="relative">
+                    <input id="comparePlayerA" type="text" class="w-full rounded-xl border border-slate-600 bg-slate-800 p-3 text-white" placeholder="Player 1">
+                    <div id="compareAutoBoxA" class="absolute z-30 mt-2 hidden w-full rounded-xl border border-slate-700 bg-slate-900/95 shadow-xl"></div>
+                </div>
+                <div class="relative">
+                    <input id="comparePlayerB" type="text" class="w-full rounded-xl border border-slate-600 bg-slate-800 p-3 text-white" placeholder="Player 2">
+                    <div id="compareAutoBoxB" class="absolute z-30 mt-2 hidden w-full rounded-xl border border-slate-700 bg-slate-900/95 shadow-xl"></div>
+                </div>
+                <button id="runCompareBtn" class="rounded-xl bg-orange-500 px-6 py-3 font-bold text-slate-950 hover:bg-orange-400">Compare</button>
+            </div>
+            <div id="compareResults" class="max-h-[70vh] overflow-auto"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "http://127.0.0.1:8000";
+        const inputEl = document.getElementById("busquedaInput");
+        const boxEl = document.getElementById("autocompleteBox");
+        const customWrap = document.getElementById("customRangeWrap");
+        const dashboardEl = document.getElementById("dashboardSection");
+        const waiverEl = document.getElementById("waiverSection");
+        const watchlistEl = document.getElementById("watchlistSection");
+        const yahooConnectBtn = document.getElementById("yahooConnectBtn");
+        const yahooDisconnectBtn = document.getElementById("yahooDisconnectBtn");
+        const yahooLeagueSelect = document.getElementById("yahooLeagueSelect");
+        const yahooStatusText = document.getElementById("yahooStatusText");
+        const startDateInput = document.getElementById("startDateInput");
+        const endDateInput = document.getElementById("endDateInput");
+        const currentYear = new Date().getFullYear();
+        const modal = document.getElementById("compareModal");
+        const comparePlayerA = document.getElementById("comparePlayerA");
+        const comparePlayerB = document.getElementById("comparePlayerB");
+        const compareAutoBoxA = document.getElementById("compareAutoBoxA");
+        const compareAutoBoxB = document.getElementById("compareAutoBoxB");
+        const compareResults = document.getElementById("compareResults");
+        let autocompleteTimer = null;
+        let compareAutoTimer = null;
+        let currentMode = "currentseason";
+        let lastViewedPlayer = null;
+        let yahooConnected = false;
+        let yahooLeagues = [];
+        let selectedYahooLeague = "";
+        const WATCHLIST_KEY = "fbs_watchlist_v1";
+        const STAT_HELP = {
+            "AVG": "Batting average: hits per at-bat.",
+            "OBP": "On-base percentage: how often a player reaches base.",
+            "SLG": "Slugging percentage: power per at-bat.",
+            "OPS": "OBP + SLG, a quick overall hitting quality metric.",
+            "HR": "Home runs.",
+            "RBI": "Runs batted in.",
+            "SB": "Stolen bases.",
+            "PA": "Plate appearances.",
+            "BB%": "Walk rate: walks per plate appearance.",
+            "K%": "Strikeout rate: strikeouts per plate appearance.",
+            "ERA": "Earned run average (lower is better).",
+            "WHIP": "Walks + Hits per inning pitched (lower is better).",
+            "K/9": "Strikeouts per 9 innings.",
+            "BB/9": "Walks per 9 innings (lower is better).",
+            "K-BB%": "Strikeout rate minus walk rate.",
+            "Avg Exit Velocity": "Average exit velocity in mph.",
+            "Max Exit Velocity": "Highest tracked exit velocity in mph.",
+            "EV50": "Average EV on a player's 50 best-hit balls.",
+            "Barrel %": "Share of batted balls with ideal power/angle mix.",
+            "Hard Hit %": "Share of batted balls hit 95+ mph.",
+            "Barrels / PA": "Barrels generated per plate appearance.",
+            "Sweet Spot %": "Share of balls hit in optimal launch-angle range.",
+            "Avg Launch Angle": "Average launch angle in degrees.",
+            "Avg EV Allowed": "Average exit velocity allowed by pitcher.",
+            "Hard Hit % Allowed": "Percent of contact allowed at 95+ mph.",
+            "Whiff %": "Swing-and-miss rate on swings.",
+            "CSW %": "Called strikes + whiffs per pitch.",
+            "Chase %": "Swings induced on pitches outside strike zone.",
+            "K-BB% (Savant)": "Statcast-estimated strikeout minus walk rate."
+        };
+
+        function setActivePeriodTab() {
+            document.querySelectorAll(".period-tab").forEach(btn => {
+                const active = btn.dataset.mode === currentMode;
+                const isSpring = btn.dataset.mode === "spring2026";
+                btn.classList.toggle("border-orange-400", active && !isSpring);
+                btn.classList.toggle("bg-orange-500/20", active && !isSpring);
+                btn.classList.toggle("text-orange-200", active && !isSpring);
+                btn.classList.toggle("border-emerald-300", active && isSpring);
+                btn.classList.toggle("bg-emerald-500/25", active && isSpring);
+                btn.classList.toggle("text-emerald-100", active && isSpring);
+            });
+            customWrap.classList.toggle("hidden", currentMode !== "custom");
+        }
+
+        function formatDateText(value) {
+            if (!value) return "N/A";
+            const s = String(value).trim().slice(0, 10);
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) return value;
+            const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+            const year = m[1];
+            const month = months[parseInt(m[2], 10) - 1] || m[2];
+            const day = m[3];
+            return `${day}-${month}-${year}`;
+        }
+
+        function renderDetailLine(label, value) {
+            const dateLabels = new Set(["Birth Date", "MLB Debut"]);
+            const finalValue = dateLabels.has(label) ? formatDateText(value) : (value ?? "N/A");
+            return `<p class="text-sm leading-6 text-slate-200"><span class="font-semibold text-slate-400">${label}:</span> <span class="font-bold text-slate-100">${finalValue}</span></p>`;
+        }
+
+        function statTier(statName, rawValue, groupType) {
+            const valueText = String(rawValue ?? "");
+            const numeric = parseFloat(valueText.replace(/[^0-9.\-]/g, ""));
+            if (!Number.isFinite(numeric)) return { emoji: "-", label: "No Data", colorClass: "text-slate-300", ringClass: "border-slate-700" };
+            const hitters = {
+                "AVG": [0.290, 0.265, 0.240], "OBP": [0.370, 0.340, 0.315], "SLG": [0.500, 0.450, 0.400], "OPS": [0.870, 0.790, 0.720],
+                "BB%": [12, 9, 7], "K%": [17, 22, 27], "Barrel %": [12, 9, 6], "Hard Hit %": [50, 42, 35],
+                "Avg Exit Velocity": [93, 90, 87], "EV50": [92, 89, 86], "Max Exit Velocity": [115, 112, 109], "Barrels / PA": [8, 6, 4], "Sweet Spot %": [38, 34, 30]
+            };
+            const pitchers = {
+                "ERA": [2.90, 3.60, 4.40], "WHIP": [1.05, 1.20, 1.34], "K/9": [10.5, 8.8, 7.5], "BB/9": [2.2, 3.0, 3.8], "K-BB%": [20, 14, 9],
+                "Avg EV Allowed": [86.0, 88.5, 90.5], "Hard Hit % Allowed": [32, 38, 44], "Whiff %": [31, 27, 23], "Chase %": [34, 30, 26], "CSW %": [31, 28, 25], "K-BB% (Savant)": [20, 14, 9]
+            };
+            const map = groupType === "pitching" ? pitchers : hitters;
+            const t = map[statName];
+            if (!t) return { emoji: "~", label: "Context", colorClass: "text-orange-300", ringClass: "border-orange-500/50" };
+            const reverse = ["K%", "ERA", "WHIP", "BB/9", "Avg EV Allowed", "Hard Hit % Allowed"].includes(statName);
+            if (!reverse) {
+                if (numeric >= t[0]) return { emoji: "++", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
+                if (numeric >= t[1]) return { emoji: "+", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
+                if (numeric >= t[2]) return { emoji: "=", label: "Average", colorClass: "text-yellow-300", ringClass: "border-yellow-500/50" };
+                return { emoji: "--", label: "Below Avg", colorClass: "text-rose-300", ringClass: "border-rose-500/50" };
+            }
+            if (numeric <= t[0]) return { emoji: "++", label: "Elite", colorClass: "text-emerald-300", ringClass: "border-emerald-500/50" };
+            if (numeric <= t[1]) return { emoji: "+", label: "Above Avg", colorClass: "text-sky-300", ringClass: "border-sky-500/50" };
+            if (numeric <= t[2]) return { emoji: "=", label: "Average", colorClass: "text-yellow-300", ringClass: "border-yellow-500/50" };
+            return { emoji: "--", label: "Below Avg", colorClass: "text-rose-300", ringClass: "border-rose-500/50" };
+        }
+
+        function leaderGlowClass(meta) {
+            if (!meta || !meta.tier) return "";
+            if (meta.tier === "gold") return "ring-2 ring-amber-300 shadow-[0_0_28px_rgba(251,191,36,0.95)]";
+            if (meta.tier === "silver") return "ring-2 ring-slate-200 shadow-[0_0_24px_rgba(226,232,240,0.8)]";
+            if (meta.tier === "bronze") return "ring-2 ring-orange-300 shadow-[0_0_22px_rgba(251,146,60,0.8)]";
+            return "";
+        }
+
+        function leaderLabel(meta) {
+            if (!meta || !meta.rank) return "";
+            if (meta.rank === 1) return "LEADER #1";
+            if (meta.rank <= 10) return `TOP 10 (#${meta.rank})`;
+            if (meta.rank <= 30) return `TOP 30 (#${meta.rank})`;
+            return "";
+        }
+
+        function renderStatsGrid(stats, groupType, leaderMap = {}) {
+            const entries = Object.entries(stats || {});
+            if (!entries.length) return `<p class="text-slate-400">No stats available.</p>`;
+            return `<div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                ${entries.map(([name, value]) => {
+                    const tier = statTier(name, value, groupType);
+                    const leaderMeta = leaderMap[name];
+                    const glow = leaderGlowClass(leaderMeta);
+                    const label = leaderLabel(leaderMeta);
+                    const tip = STAT_HELP[name] || "Stat explanation not available yet.";
+                    return `<article class="relative rounded-xl border bg-slate-800/80 p-4 ${tier.ringClass} ${glow}">
+                        ${label ? `<span class="absolute right-2 top-2 rounded bg-black/40 px-2 py-0.5 text-[10px] font-bold tracking-wide text-orange-200">${label}</span>` : ""}
+                        <p class="text-xs uppercase tracking-wide text-orange-300" title="${tip}">${name}</p><p class="mt-2 text-xl font-black text-white">${value}</p><p class="mt-1 text-xs font-semibold ${tier.colorClass}">${tier.emoji} ${tier.label}</p>
+                    </article>`;
+                }).join("")}
+            </div>`;
+        }
+
+        function renderLeadersBlock(title, board) {
+            const rows = board || [];
+            if (!rows.length) {
+                return `<article class="rounded-xl border border-slate-700 bg-slate-900/70 p-3"><p class="text-sm font-bold text-orange-300">${title}</p><p class="mt-2 text-sm text-slate-400">No data.</p></article>`;
+            }
+            return `<article class="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                <p class="mb-2 text-sm font-bold text-orange-300">${title}</p>
+                <div class="space-y-1">${rows.slice(0, 5).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span></p>`).join("")}</div>
+            </article>`;
+        }
+
+        function renderDashboardPlayerLink(row) {
+            const name = row?.name || "N/A";
+            const safeName = String(name).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const playerId = Number(row?.id);
+            if (!Number.isFinite(playerId) || playerId <= 0) return safeName;
+            return `<button class="font-semibold text-slate-100 underline decoration-slate-500/70 underline-offset-2 transition hover:text-orange-200 hover:decoration-orange-300" onclick="openDashboardPlayer(${playerId}, '${String(name).replace(/'/g, "\\'")}')">${safeName}</button>`;
+        }
+
+        function renderDashboard(data) {
+            if (!data || data.error) {
+                dashboardEl.innerHTML = "";
+                return;
+            }
+            const hitting = data.hitting_leaders || {};
+            const pitching = data.pitching_leaders || {};
+            const onFire = data.on_fire || [];
+            dashboardEl.innerHTML = `
+                <div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4 md:p-5">
+                    <div class="mb-4 flex flex-wrap items-end gap-2">
+                        <h3 class="text-lg font-extrabold text-orange-300">Quick Dashboard</h3>
+                        <p class="text-xs font-semibold tracking-wide text-slate-400">League View</p>
+                    </div>
+                    <div class="mb-4 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-orange-300">Players On Fire</p>
+                        <p class="mb-2 text-xs text-slate-400">${data.on_fire_label || "Last 14 Days"}</p>
+                        <div class="grid gap-1 md:grid-cols-2">
+                            ${onFire.slice(0, 6).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(OPS ${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
+                        </div>
+                    </div>
+                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                        ${renderLeadersBlock("HR Leaders", hitting.HR)}
+                        ${renderLeadersBlock("OPS Leaders", hitting.OPS)}
+                        ${renderLeadersBlock("RBI Leaders", hitting.RBI)}
+                        ${renderLeadersBlock("K Leaders", pitching.K)}
+                        ${renderLeadersBlock("ERA Leaders", pitching.ERA)}
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchDashboard() {
+            try {
+                const params = new URLSearchParams();
+                params.set("mode", currentMode);
+                const response = await fetch(`${API_BASE}/dashboard?${params.toString()}`);
+                const data = await response.json();
+                renderDashboard(data);
+            } catch (_) {
+                dashboardEl.innerHTML = "";
+            }
+        }
+
+        function renderYahooStatus() {
+            yahooConnectBtn.classList.toggle("hidden", yahooConnected);
+            yahooDisconnectBtn.classList.toggle("hidden", !yahooConnected);
+            yahooLeagueSelect.classList.toggle("hidden", !yahooConnected);
+            if (!yahooConnected) {
+                yahooStatusText.textContent = "Yahoo: not connected";
+                return;
+            }
+            const leagueLabel = selectedYahooLeague ? ` | league ${selectedYahooLeague}` : "";
+            yahooStatusText.textContent = `Yahoo: connected${leagueLabel}`;
+        }
+
+        async function loadYahooLeagues() {
+            if (!yahooConnected) return;
+            try {
+                const response = await fetch(`${API_BASE}/auth/yahoo/leagues`);
+                const data = await response.json();
+                if (data.error) return;
+                yahooLeagues = data.leagues || [];
+                yahooLeagueSelect.innerHTML = `<option value="">Select Yahoo League</option>` +
+                    yahooLeagues.map(l => `<option value="${l.league_key}">${l.name}</option>`).join("");
+                if (selectedYahooLeague) yahooLeagueSelect.value = selectedYahooLeague;
+            } catch (_) {}
+        }
+
+        async function refreshYahooAuthStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/yahoo/status`);
+                const data = await response.json();
+                yahooConnected = !!data.connected;
+            } catch (_) {
+                yahooConnected = false;
+            }
+            renderYahooStatus();
+            if (yahooConnected) await loadYahooLeagues();
+        }
+
+        function loadWatchlist() {
+            try {
+                return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || "[]");
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function saveWatchlist(items) {
+            localStorage.setItem(WATCHLIST_KEY, JSON.stringify(items));
+        }
+
+        function addWatchlistTag(playerId) {
+            const list = loadWatchlist();
+            const idx = list.findIndex(x => String(x.id) === String(playerId));
+            if (idx < 0) return;
+            const tag = window.prompt("Tag for this player (Sleeper, Waiver, Trade):", "");
+            if (!tag) return;
+            const clean = String(tag).trim().slice(0, 24);
+            if (!clean) return;
+            const tags = new Set(list[idx].tags || []);
+            tags.add(clean);
+            list[idx].tags = Array.from(tags).slice(0, 5);
+            saveWatchlist(list);
+            renderWatchlist();
+        }
+
+        function removeWatchlistPlayer(playerId) {
+            const next = loadWatchlist().filter(x => String(x.id) !== String(playerId));
+            saveWatchlist(next);
+            renderWatchlist();
+        }
+
+        function addCurrentPlayerToWatchlist() {
+            if (!lastViewedPlayer || !lastViewedPlayer.player_id) return;
+            const list = loadWatchlist();
+            const pid = String(lastViewedPlayer.player_id);
+            if (list.some(x => String(x.id) === pid)) return;
+            const item = {
+                id: lastViewedPlayer.player_id,
+                nombre: lastViewedPlayer.nombre,
+                equipo: lastViewedPlayer.equipo,
+                posicion: lastViewedPlayer.posicion,
+                tags: [],
+                saved_at: new Date().toISOString().slice(0, 10),
+            };
+            list.unshift(item);
+            saveWatchlist(list.slice(0, 40));
+            renderWatchlist();
+        }
+
+        function renderWatchlist() {
+            const list = loadWatchlist();
+            if (!list.length) {
+                watchlistEl.innerHTML = `<div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4"><h3 class="text-lg font-extrabold text-orange-300">Watchlist</h3><p class="mt-2 text-sm text-slate-400">No players saved yet. Use "Save Watchlist" on a player card.</p></div>`;
+                return;
+            }
+            watchlistEl.innerHTML = `<div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4">
+                <div class="mb-3 flex items-center justify-between gap-2">
+                    <h3 class="text-lg font-extrabold text-orange-300">Watchlist</h3>
+                    <p class="text-xs text-slate-400">${list.length} saved</p>
+                </div>
+                <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    ${list.map(p => `<article class="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+                        <button class="text-left font-bold text-slate-100 hover:text-orange-200" onclick="openDashboardPlayer(${p.id}, '${String(p.nombre).replace(/'/g, "\\'")}')">${p.nombre}</button>
+                        <p class="text-xs text-orange-300">${p.equipo} | ${p.posicion}</p>
+                        <p class="mt-1 text-[11px] text-slate-400">${(p.tags || []).join(" | ") || "No tags"}</p>
+                        <div class="mt-2 flex gap-2">
+                            <button class="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:border-orange-300 hover:text-orange-200" onclick="addWatchlistTag(${p.id})">Tag</button>
+                            <button class="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:border-rose-400 hover:text-rose-300" onclick="removeWatchlistPlayer(${p.id})">Remove</button>
+                        </div>
+                    </article>`).join("")}
+                </div>
+            </div>`;
+        }
+        window.addCurrentPlayerToWatchlist = addCurrentPlayerToWatchlist;
+        window.addWatchlistTag = addWatchlistTag;
+        window.removeWatchlistPlayer = removeWatchlistPlayer;
+
+        async function fetchWaiverScanner() {
+            try {
+                const params = new URLSearchParams();
+                params.set("mode", currentMode);
+                const response = await fetch(`${API_BASE}/waiver_scanner?${params.toString()}`);
+                const data = await response.json();
+                renderWaiverScanner(data);
+            } catch (_) {
+                waiverEl.innerHTML = "";
+            }
+        }
+
+        function renderWaiverColumn(title, rows) {
+            const items = rows || [];
+            return `<div class="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                <p class="mb-2 text-sm font-bold text-orange-300">${title}</p>
+                <div class="space-y-2">
+                    ${items.slice(0, 7).map(r => `<article class="rounded border border-slate-700 bg-slate-800/70 p-2">
+                        <button class="text-left font-semibold text-slate-100 hover:text-orange-200" onclick="openDashboardPlayer(${r.id}, '${String(r.name).replace(/'/g, "\\'")}')">${r.name}</button>
+                        <p class="text-xs text-slate-400">${r.team} | ${r.posicion || "N/A"} | Score ${r.score}</p>
+                        <p class="text-[11px] text-orange-200">${(r.strengths || []).join(" | ")}</p>
+                    </article>`).join("") || "<p class='text-sm text-slate-400'>No candidates.</p>"}
+                </div>
+            </div>`;
+        }
+
+        function renderWaiverScanner(data) {
+            if (!data || data.error) {
+                waiverEl.innerHTML = "";
+                return;
+            }
+            waiverEl.innerHTML = `<div class="rounded-2xl border border-slate-700 bg-slate-900/55 p-4 md:p-5">
+                <div class="mb-3 flex items-end justify-between gap-2">
+                    <h3 class="text-lg font-extrabold text-orange-300">Waiver Scanner</h3>
+                    <p class="text-xs text-slate-400">${data.label || currentMode}</p>
+                </div>
+                <p class="mb-3 text-xs text-slate-400">${data.note || ""}</p>
+                <div class="grid gap-3 md:grid-cols-2">
+                    ${renderWaiverColumn("Hitter Targets", data.hitters)}
+                    ${renderWaiverColumn("Pitcher Targets", data.pitchers)}
+                </div>
+            </div>`;
+        }
+
+        async function fetchTrendPack(playerId) {
+            try {
+                const base = encodeURIComponent("player");
+                const [d7, d30] = await Promise.all([
+                    fetch(`${API_BASE}/jugador/${base}?player_id=${playerId}&mode=last7`).then(r => r.json()),
+                    fetch(`${API_BASE}/jugador/${base}?player_id=${playerId}&mode=last30`).then(r => r.json()),
+                ]);
+                if (d7.error || d30.error) return null;
+                return { last7: d7, last30: d30 };
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function trendSignal(metric, aVal, bVal) {
+            const a = parseMetric(aVal);
+            const b = parseMetric(bVal);
+            if (a === null || b === null) return { text: "Flat", cls: "text-slate-300", icon: "-" };
+            const lowerBetter = ["ERA", "WHIP", "BB/9", "K%", "Avg EV Allowed", "Hard Hit % Allowed"].includes(metric);
+            const delta = lowerBetter ? (b - a) : (a - b);
+            const threshold = Math.max(Math.abs(b) * 0.04, 0.01);
+            if (delta > threshold) return { text: "Up", cls: "text-emerald-300", icon: "↑" };
+            if (delta < -threshold) return { text: "Down", cls: "text-rose-300", icon: "↓" };
+            return { text: "Flat", cls: "text-slate-300", icon: "→" };
+        }
+
+        function renderTrendPanel(mainData, pack) {
+            if (!pack || !mainData) return "";
+            const hasHitting = Object.keys(mainData.hitting_stats || {}).length > 0;
+            const hasPitching = Object.keys(mainData.pitching_stats || {}).length > 0;
+            const metrics = [];
+            if (hasHitting) metrics.push("OPS", "AVG", "HR", "RBI", "BB%", "K%");
+            if (hasPitching) metrics.push("ERA", "WHIP", "K/9", "BB/9", "K-BB%");
+            const unique = Array.from(new Set(metrics));
+            if (!unique.length) return "";
+            const rows = unique.map(m => {
+                const a = (pack.last7.hitting_stats || {})[m] ?? (pack.last7.pitching_stats || {})[m];
+                const b = (pack.last30.hitting_stats || {})[m] ?? (pack.last30.pitching_stats || {})[m];
+                const sig = trendSignal(m, a, b);
+                return `<tr class="border-t border-slate-800"><td class="px-2 py-1 font-semibold text-orange-200">${m}</td><td class="px-2 py-1 text-slate-100">${a ?? "N/A"}</td><td class="px-2 py-1 text-slate-100">${b ?? "N/A"}</td><td class="px-2 py-1 ${sig.cls}">${sig.icon} ${sig.text}</td></tr>`;
+            }).join("");
+            return `<div class="mb-6 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/65">
+                <div class="border-b border-slate-700 bg-slate-800/70 px-3 py-2 text-sm font-bold text-orange-300">Trend Radar (Last 7 vs Last 30)</div>
+                <table class="w-full text-xs md:text-sm"><thead class="bg-slate-800/50 text-slate-300"><tr><th class="px-2 py-1 text-left">Metric</th><th class="px-2 py-1 text-left">Last 7</th><th class="px-2 py-1 text-left">Last 30</th><th class="px-2 py-1 text-left">Signal</th></tr></thead><tbody>${rows}</tbody></table>
+            </div>`;
+        }
+
+        function clampScore(v) {
+            return Math.max(0, Math.min(100, Math.round(v)));
+        }
+
+        function metricNum(obj, key) {
+            const n = parseMetric((obj || {})[key]);
+            return n === null ? null : n;
+        }
+
+        function buildDecisionModel(data, trendPack) {
+            const hasHitting = Object.keys(data.hitting_stats || {}).length > 0;
+            const hasPitching = Object.keys(data.pitching_stats || {}).length > 0;
+            let addScore = 50;
+            let dropRisk = 50;
+            const addReasons = [];
+            const dropReasons = [];
+
+            if (hasHitting) {
+                const runs = metricNum(data.hitting_stats, "R");
+                const hr = metricNum(data.hitting_stats, "HR");
+                const rbi = metricNum(data.hitting_stats, "RBI");
+                const bb = metricNum(data.hitting_stats, "BB");
+                const ops = metricNum(data.hitting_stats, "OPS");
+                const slg = metricNum(data.hitting_stats, "SLG");
+                const obp = metricNum(data.hitting_stats, "OBP");
+                const ks = metricNum(data.hitting_stats, "K");
+                const kPct = metricNum(data.hitting_stats, "K%");
+                const bbPct = metricNum(data.hitting_stats, "BB%");
+                const barrel = metricNum(data.savant_hitting, "Barrel %");
+                const hardHit = metricNum(data.savant_hitting, "Hard Hit %");
+
+                if (runs !== null && runs >= 60) { addScore += 6; }
+                if (hr !== null && hr >= 20) { addScore += 8; }
+                if (rbi !== null && rbi >= 65) { addScore += 7; }
+                if (bb !== null && bb >= 45) { addScore += 5; }
+                if (ops !== null && ops >= 0.8) { addScore += 10; dropRisk -= 8; addReasons.push(`OPS sólido (${data.hitting_stats["OPS"]})`); }
+                if (slg !== null && slg >= 0.44) { addScore += 7; }
+                if (obp !== null && obp >= 0.34) { addScore += 7; dropRisk -= 5; }
+                if (bbPct !== null && bbPct >= 9) { addScore += 6; dropRisk -= 4; }
+                if (kPct !== null && kPct >= 27) { addScore -= 8; dropRisk += 10; dropReasons.push(`K% alto (${data.hitting_stats["K%"]})`); }
+                if (ks !== null && ks >= 150) { addScore -= 5; dropRisk += 6; }
+                if (barrel !== null && barrel >= 9) { addScore += 10; addReasons.push(`Barrel% fuerte (${data.savant_hitting["Barrel %"]})`); }
+                if (hardHit !== null && hardHit >= 42) { addScore += 8; }
+                if (barrel !== null && barrel < 5) { addScore -= 8; dropRisk += 8; }
+            }
+
+            if (hasPitching) {
+                const era = metricNum(data.pitching_stats, "ERA");
+                const whip = metricNum(data.pitching_stats, "WHIP");
+                const wins = metricNum(data.pitching_stats, "W");
+                const hld = metricNum(data.pitching_stats, "HLD");
+                const sv = metricNum(data.pitching_stats, "SV");
+                const sho = metricNum(data.pitching_stats, "SHO");
+                const qs = metricNum(data.pitching_stats, "QS");
+                const k9 = metricNum(data.pitching_stats, "K/9");
+                const bb9 = metricNum(data.pitching_stats, "BB/9");
+                const kbb = metricNum(data.pitching_stats, "K-BB%");
+                const bb = metricNum(data.pitching_stats, "BB");
+                const h = metricNum(data.pitching_stats, "H");
+                const whiff = metricNum(data.savant_pitching, "Whiff %");
+                const csw = metricNum(data.savant_pitching, "CSW %");
+
+                if (era !== null && era <= 3.7) { addScore += 10; dropRisk -= 8; addReasons.push(`ERA buena (${data.pitching_stats["ERA"]})`); }
+                if (whip !== null && whip <= 1.22) { addScore += 10; dropRisk -= 8; }
+                if (wins !== null && wins >= 8) { addScore += 5; }
+                if (hld !== null && hld >= 8) { addScore += 7; }
+                if (sv !== null && sv >= 10) { addScore += 7; }
+                if (sho !== null && sho >= 1) { addScore += 4; }
+                if (qs !== null && qs >= 10) { addScore += 8; }
+                if (k9 !== null && k9 >= 9) { addScore += 8; }
+                if (bb9 !== null && bb9 >= 3.8) { addScore -= 8; dropRisk += 10; dropReasons.push(`BB/9 alto (${data.pitching_stats["BB/9"]})`); }
+                if (bb !== null && bb >= 65) { addScore -= 5; dropRisk += 6; }
+                if (h !== null && h >= 170) { addScore -= 5; dropRisk += 6; }
+                if (kbb !== null && kbb >= 14) { addScore += 8; }
+                if (whiff !== null && whiff >= 27) { addScore += 6; }
+                if (csw !== null && csw >= 28) { addScore += 6; }
+                if (era !== null && era >= 4.6) { addScore -= 10; dropRisk += 12; }
+                if (whip !== null && whip >= 1.35) { addScore -= 8; dropRisk += 10; }
+            }
+
+            if (trendPack) {
+                const tMetrics = hasPitching ? ["ERA", "WHIP", "K/9", "BB/9", "K-BB%"] : ["OPS", "AVG", "BB%", "K%"];
+                let up = 0;
+                let down = 0;
+                for (const m of tMetrics) {
+                    const a = (trendPack.last7.hitting_stats || {})[m] ?? (trendPack.last7.pitching_stats || {})[m];
+                    const b = (trendPack.last30.hitting_stats || {})[m] ?? (trendPack.last30.pitching_stats || {})[m];
+                    const sig = trendSignal(m, a, b);
+                    if (sig.text === "Up") up += 1;
+                    if (sig.text === "Down") down += 1;
+                }
+                addScore += up * 3;
+                addScore -= down * 2;
+                dropRisk += down * 3;
+                dropRisk -= up * 2;
+                if (up >= 3) addReasons.push("Tendencia reciente positiva");
+                if (down >= 3) dropReasons.push("Tendencia reciente negativa");
+            }
+
+            addScore = clampScore(addScore);
+            dropRisk = clampScore(dropRisk);
+            if (!addReasons.length) addReasons.push("Perfil neutro, revisar contexto y rol.");
+            if (!dropReasons.length) dropReasons.push("Riesgo moderado, monitorear 7d/30d.");
+            return { addScore, dropRisk, addReasons: addReasons.slice(0, 3), dropReasons: dropReasons.slice(0, 3) };
+        }
+
+        function renderDecisionPanel(data, trendPack) {
+            const model = buildDecisionModel(data, trendPack);
+            const addTone = model.addScore >= 70 ? "text-emerald-300" : (model.addScore >= 50 ? "text-yellow-300" : "text-rose-300");
+            const dropTone = model.dropRisk >= 70 ? "text-rose-300" : (model.dropRisk >= 50 ? "text-yellow-300" : "text-emerald-300");
+            return `<div class="mb-6 grid gap-3 md:grid-cols-2">
+                <article class="rounded-xl border border-emerald-700/40 bg-slate-900/65 p-4">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-emerald-300">Add Score</p>
+                    <p class="mt-1 text-3xl font-black ${addTone}">${model.addScore}</p>
+                    <div class="mt-2 space-y-1">${model.addReasons.map(r => `<p class="text-xs text-slate-300">${r}</p>`).join("")}</div>
+                </article>
+                <article class="rounded-xl border border-rose-700/35 bg-slate-900/65 p-4">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-rose-300">Drop Risk</p>
+                    <p class="mt-1 text-3xl font-black ${dropTone}">${model.dropRisk}</p>
+                    <div class="mt-2 space-y-1">${model.dropReasons.map(r => `<p class="text-xs text-slate-300">${r}</p>`).join("")}</div>
+                </article>
+            </div>`;
+        }
+
+        function resetToHome() {
+            currentMode = "currentseason";
+            setActivePeriodTab();
+            startDateInput.value = "";
+            endDateInput.value = "";
+            inputEl.value = "";
+            hideAutocomplete();
+            lastViewedPlayer = null;
+            document.getElementById("contenedor-resultado").innerHTML = "";
+            closeCompareModal();
+            fetchDashboard();
+            fetchWaiverScanner();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+
+        function openDashboardPlayer(playerId, playerName) {
+            inputEl.value = playerName || inputEl.value;
+            buscarJugador(String(playerId));
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        window.openDashboardPlayer = openDashboardPlayer;
+
+        function renderDisambiguation(options, query) {
+            return `<div class="rounded-2xl border border-orange-500/40 bg-slate-900/80 p-4"><h3 class="text-lg font-bold text-orange-300">Multiple players found for "${query}"</h3><p class="mt-1 text-sm text-slate-300">Pick one below first.</p><div class="mt-4 grid gap-3">
+                ${options.map(opt => `<button onclick="buscarJugador('${opt.id}')" class="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-800/90 p-3 text-left transition hover:border-orange-400"><span><span class="block font-bold text-white">${opt.nombre}</span><span class="block text-sm text-orange-300">${opt.equipo} - ${opt.posicion}</span></span><img src="${opt.foto_url}" alt="${opt.nombre}" class="h-14 w-14 rounded-lg border border-slate-600 object-cover"></button>`).join("")}
+            </div></div>`;
+        }
+
+        function openCompareModal() {
+            if (!lastViewedPlayer) return;
+            comparePlayerA.value = lastViewedPlayer.nombre;
+            comparePlayerB.value = "";
+            compareResults.innerHTML = `<p class="text-slate-300">Search player 2 and click Compare.</p>`;
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+        }
+        window.openCompareModal = openCompareModal;
+        function closeCompareModal() {
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+            hideCompareAutocomplete();
+        }
+
+        function handShort(v) {
+            const t = String(v || "").toLowerCase();
+            if (t.includes("left")) return "L";
+            if (t.includes("right")) return "R";
+            if (t.includes("switch")) return "S";
+            return "N/A";
+        }
+
+        function renderPlayer(data, trendHtml = "", decisionHtml = "") {
+            lastViewedPlayer = data;
+            const hasHitting = Object.keys(data.hitting_stats || {}).length > 0;
+            const hasPitching = Object.keys(data.pitching_stats || {}).length > 0;
+            const periodLabel = data.stats_period_label || "Season";
+            const bt = `${handShort(data.batea)}/${handShort(data.lanza)}`;
+            return `<div class="relative mb-6 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:p-6">
+                ${(data.team_logo_cap_dark_url || data.team_logo_url) ? `<div class="team-watermark-wrap"><img src="${data.team_logo_cap_dark_url || data.team_logo_url}" class="team-watermark" alt=""></div>` : ""}
+                <div class="relative z-10 grid gap-5 md:grid-cols-[160px_1fr]">
+                    <img src="${data.foto_url}" alt="${data.nombre}" class="mx-auto h-60 w-36 rounded-sm border-4 border-slate-200/80 object-cover shadow-xl" onerror="this.src='https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_426,q_auto:best/v1/people/generic/headshot/67/current';">
+                    <div>
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <h2 class="text-4xl font-black leading-none tracking-tight text-white">${data.nombre} ${data.numero && data.numero !== "N/A" ? `#${data.numero}` : ""}</h2>
+                                <p class="mt-1 text-lg font-extrabold tracking-wide text-orange-300">${data.equipo} | ${data.posicion} | ${data.tipo_jugador || "Player"}</p>
+                                <p class="mt-1 text-sm text-slate-300">Born: <span class="font-semibold text-slate-100">${formatDateText(data.nacimiento)}</span> | MLB Debut: <span class="font-semibold text-slate-100">${formatDateText(data.debut_mlb)}</span></p>
+                                <p class="mt-1 text-sm font-semibold text-slate-300">View: ${periodLabel}</p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="addCurrentPlayerToWatchlist()" class="rounded-lg border border-emerald-500/70 bg-slate-800 px-4 py-2 text-sm font-bold text-emerald-200 hover:bg-slate-700">Save Watchlist</button>
+                                <button onclick="openCompareModal()" class="rounded-lg border border-orange-500/70 bg-slate-800 px-4 py-2 text-sm font-bold text-orange-200 hover:bg-slate-700">Compare</button>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-x-7 gap-y-3">
+                            <div><p class="text-3xl font-black text-white">${data.edad ?? "N/A"}</p><p class="text-xs uppercase tracking-wide text-slate-300">Age</p></div>
+                            <div><p class="text-3xl font-black text-white">${data.altura ?? "N/A"}</p><p class="text-xs uppercase tracking-wide text-slate-300">Height</p></div>
+                            <div><p class="text-3xl font-black text-white">${data.peso_lb ?? "N/A"}</p><p class="text-xs uppercase tracking-wide text-slate-300">Weight (lb)</p></div>
+                            <div><p class="text-3xl font-black text-white">${handShort(data.batea)}/${handShort(data.lanza)}</p><p class="text-xs uppercase tracking-wide text-slate-300">B/T</p></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ${decisionHtml}
+            ${trendHtml}
+            ${hasHitting ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Hitting Snapshot (${periodLabel})</h3>${renderStatsGrid(data.hitting_stats, "hitting", (data.leader_highlights || {}).hitting || {})}</div>` : ""}
+            ${hasPitching ? `<div class="mb-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Pitching Snapshot (${periodLabel})</h3>${renderStatsGrid(data.pitching_stats, "pitching", (data.leader_highlights || {}).pitching || {})}</div>` : ""}
+            ${hasHitting ? `<div><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Contact Quality (${data.savant_period_label || periodLabel})</h3>${renderStatsGrid(data.savant_hitting || {}, "hitting")}</div>` : ""}
+            ${hasPitching ? `<div class="mt-6"><h3 class="mb-3 text-lg font-bold text-orange-300">Savant Pitch Quality (${periodLabel})</h3>${renderStatsGrid(data.savant_pitching || {}, "pitching")}</div>` : ""}`;
+        }
+
+        function normalizeVal(v) { return v === undefined || v === null || v === "" ? "N/A" : String(v); }
+        function parseMetric(v) { const n = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : null; }
+        function lowerIsBetter(metric) { return ["ERA", "WHIP", "BB", "H", "BB/9", "K%", "Avg EV Allowed", "Hard Hit % Allowed"].includes(metric); }
+        function compareClass(metric, aVal, bVal, side) {
+            const a = parseMetric(aVal), b = parseMetric(bVal);
+            if (a === null || b === null || a === b) return "";
+            const aWins = lowerIsBetter(metric) ? a < b : a > b;
+            return (side === "a" && aWins) || (side === "b" && !aWins) ? "text-emerald-300 font-bold drop-shadow-[0_0_6px_rgba(16,185,129,0.65)]" : "";
+        }
+
+        function mergedMetricRows(aStats, bStats) { return Array.from(new Set([...Object.keys(aStats || {}), ...Object.keys(bStats || {})])); }
+        function renderCompareSection(title, aStats, bStats, aName, bName) {
+            const rows = mergedMetricRows(aStats, bStats); if (!rows.length) return "";
+            return `<div class="mb-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/70">
+                <div class="border-b border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-bold text-orange-300">${title}</div>
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-800/60 text-slate-300"><tr><th class="px-3 py-2 text-left">Metric</th><th class="px-3 py-2 text-center">${aName}</th><th class="px-3 py-2 text-center">${bName}</th></tr></thead>
+                    <tbody>${rows.map(k => { const av = normalizeVal((aStats || {})[k]); const bv = normalizeVal((bStats || {})[k]); return `<tr class="border-t border-slate-800"><td class="px-3 py-2 font-semibold text-orange-200">${k}</td><td class="px-3 py-2 text-center ${compareClass(k, av, bv, "a")}">${av}</td><td class="px-3 py-2 text-center ${compareClass(k, av, bv, "b")}">${bv}</td></tr>`; }).join("")}</tbody>
+                </table>
+            </div>`;
+        }
+        function renderCompareView(a, b) {
+            return `<p class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-300">Comparing Period: ${a.stats_period_label || currentMode}</p>
+            <div class="mb-4 grid gap-3 md:grid-cols-2">
+                <div class="rounded-xl border border-slate-700 bg-slate-800/75 p-3"><div class="flex items-center gap-3"><img src="${a.foto_url}" class="h-16 w-16 rounded-lg border border-orange-400 object-cover"><div><p class="font-bold">${a.nombre}</p><p class="text-xs text-orange-300">${a.equipo} - ${a.posicion}</p></div></div></div>
+                <div class="rounded-xl border border-slate-700 bg-slate-800/75 p-3"><div class="flex items-center justify-end gap-3 text-right"><div><p class="font-bold">${b.nombre}</p><p class="text-xs text-orange-300">${b.equipo} - ${b.posicion}</p></div><img src="${b.foto_url}" class="h-16 w-16 rounded-lg border border-orange-400 object-cover"></div></div>
+            </div>
+            ${renderCompareSection("Hitting Snapshot", a.hitting_stats, b.hitting_stats, a.nombre, b.nombre)}
+            ${renderCompareSection("Pitching Snapshot", a.pitching_stats, b.pitching_stats, a.nombre, b.nombre)}
+            ${renderCompareSection("Savant Hitting", a.savant_hitting, b.savant_hitting, a.nombre, b.nombre)}
+            ${renderCompareSection("Savant Pitching", a.savant_pitching, b.savant_pitching, a.nombre, b.nombre)}`;
+        }
+
+        function hideAutocomplete() { boxEl.classList.add("hidden"); boxEl.innerHTML = ""; }
+        function hideCompareAutocomplete() { compareAutoBoxA.classList.add("hidden"); compareAutoBoxA.innerHTML = ""; compareAutoBoxB.classList.add("hidden"); compareAutoBoxB.innerHTML = ""; }
+
+        function showAutocomplete(items) {
+            if (!items || !items.length) return hideAutocomplete();
+            boxEl.innerHTML = items.map(item => `<button class="flex w-full items-center justify-between border-b border-slate-800 px-3 py-2 text-left last:border-b-0 hover:bg-slate-800" onclick="selectSuggestion('${item.id}', '${String(item.nombre).replace(/'/g, "\\'")}')"><span class="font-semibold text-slate-100">${item.nombre}</span><span class="text-xs text-orange-300">${item.equipo} - ${item.posicion}</span></button>`).join("");
+            boxEl.classList.remove("hidden");
+        }
+        function showCompareAutocomplete(items, target) {
+            const box = target === "a" ? compareAutoBoxA : compareAutoBoxB;
+            if (!items || !items.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+            box.innerHTML = items.map(item => `<button class="flex w-full items-center justify-between border-b border-slate-800 px-3 py-2 text-left last:border-b-0 hover:bg-slate-800" onclick="selectCompareSuggestion('${target}', '${String(item.nombre).replace(/'/g, "\\'")}')"><span class="font-semibold text-slate-100">${item.nombre}</span><span class="text-xs text-orange-300">${item.equipo} - ${item.posicion}</span></button>`).join("");
+            box.classList.remove("hidden");
+        }
+
+        async function fetchAutocomplete() {
+            const q = inputEl.value.trim(); const tokenCount = q.split(/\s+/).filter(Boolean).length;
+            if (q.length < 2 || (tokenCount === 1 && q.length < 3)) return hideAutocomplete();
+            try { const response = await fetch(`${API_BASE}/autocomplete/${encodeURIComponent(q)}`); const data = await response.json(); showAutocomplete(data.suggestions || []); } catch (_) { hideAutocomplete(); }
+        }
+        async function fetchCompareAutocomplete(target) {
+            const input = target === "a" ? comparePlayerA : comparePlayerB;
+            const q = input.value.trim(); const tokenCount = q.split(/\s+/).filter(Boolean).length;
+            if (q.length < 2 || (tokenCount === 1 && q.length < 3)) return showCompareAutocomplete([], target);
+            try { const response = await fetch(`${API_BASE}/autocomplete/${encodeURIComponent(q)}`); const data = await response.json(); showCompareAutocomplete(data.suggestions || [], target); } catch (_) { showCompareAutocomplete([], target); }
+        }
+
+        function selectSuggestion(playerId, playerName) { inputEl.value = playerName; hideAutocomplete(); buscarJugador(playerId); }
+        window.selectSuggestion = selectSuggestion;
+        function selectCompareSuggestion(target, playerName) { if (target === "a") comparePlayerA.value = playerName; else comparePlayerB.value = playerName; hideCompareAutocomplete(); }
+        window.selectCompareSuggestion = selectCompareSuggestion;
+
+        function buildQueryParams(selectedPlayerId) {
+            const params = new URLSearchParams(); params.set("mode", currentMode); if (selectedPlayerId) params.set("player_id", selectedPlayerId);
+            if (currentMode === "custom") { const s = startDateInput.value; const e = endDateInput.value; if (!s || !e) return { error: "Select both dates for custom range." }; params.set("start_date", s); params.set("end_date", e); }
+            return { params };
+        }
+        async function fetchPlayerByName(name, selectedPlayerId = null) {
+            const built = buildQueryParams(selectedPlayerId); if (built.error) return { error: built.error };
+            const url = `${API_BASE}/jugador/${encodeURIComponent(name || "player")}?${built.params.toString()}`;
+            const response = await fetch(url); const data = await response.json();
+            if (!response.ok || data.error) return { error: data.error || "Player not found." }; return data;
+        }
+        async function buscarJugador(selectedPlayerId = null) {
+            const busqueda = inputEl.value.trim(); const contenedor = document.getElementById("contenedor-resultado");
+            if (!busqueda && !selectedPlayerId) return;
+            hideAutocomplete(); contenedor.innerHTML = `<p class="text-center text-orange-300">Searching player...</p>`;
+            try {
+                const data = await fetchPlayerByName(busqueda, selectedPlayerId);
+                if (data.error) return contenedor.innerHTML = `<p class="text-center text-red-400">${data.error}</p>`;
+                if (data.disambiguation) return contenedor.innerHTML = renderDisambiguation(data.options || [], data.query || busqueda);
+                const trends = data.player_id ? await fetchTrendPack(data.player_id) : null;
+                const trendHtml = renderTrendPanel(data, trends);
+                const decisionHtml = renderDecisionPanel(data, trends);
+                contenedor.innerHTML = renderPlayer(data, trendHtml, decisionHtml);
+                renderWatchlist();
+            } catch (_) { contenedor.innerHTML = `<p class="text-center text-red-400">Connection error with backend.</p>`; }
+        }
+        async function runModalCompare() {
+            const aName = comparePlayerA.value.trim(); const bName = comparePlayerB.value.trim();
+            if (!aName || !bName) return compareResults.innerHTML = `<p class="text-red-400">Type both player names.</p>`;
+            hideCompareAutocomplete();
+            compareResults.innerHTML = `<p class="text-orange-300">Comparing...</p>`;
+            try {
+                const [a, b] = await Promise.all([fetchPlayerByName(aName), fetchPlayerByName(bName)]);
+                if (a.error || b.error) return compareResults.innerHTML = `<p class="text-red-400">${a.error || b.error}</p>`;
+                if (a.disambiguation || b.disambiguation) return compareResults.innerHTML = `<p class="text-red-400">Use a more specific name (team/position hint) for compare.</p>`;
+                compareResults.innerHTML = renderCompareView(a, b);
+            } catch (_) { compareResults.innerHTML = `<p class="text-red-400">Connection error.</p>`; }
+        }
+
+        document.querySelectorAll(".period-tab").forEach(btn => btn.addEventListener("click", () => { currentMode = btn.dataset.mode; setActivePeriodTab(); fetchDashboard(); fetchWaiverScanner(); if (inputEl.value.trim()) buscarJugador(); }));
+        document.getElementById("applyCustomBtn").addEventListener("click", () => { currentMode = "custom"; setActivePeriodTab(); fetchDashboard(); fetchWaiverScanner(); if (inputEl.value.trim()) buscarJugador(); });
+        document.getElementById("closeCompareModal").addEventListener("click", closeCompareModal);
+        document.getElementById("runCompareBtn").addEventListener("click", runModalCompare);
+        document.getElementById("homeBtn").addEventListener("click", resetToHome);
+        document.getElementById("titleHomeBtn").addEventListener("click", resetToHome);
+        yahooConnectBtn.addEventListener("click", () => { window.location.href = `${API_BASE}/auth/yahoo/start`; });
+        yahooDisconnectBtn.addEventListener("click", async () => {
+            await fetch(`${API_BASE}/auth/yahoo/logout`);
+            selectedYahooLeague = "";
+            await refreshYahooAuthStatus();
+        });
+        yahooLeagueSelect.addEventListener("change", () => {
+            selectedYahooLeague = yahooLeagueSelect.value || "";
+            renderYahooStatus();
+            // league-specific scoring/pipeline will attach here in next phase.
+        });
+        modal.addEventListener("click", (e) => { if (e.target === modal) closeCompareModal(); });
+
+        function openDatePicker(id) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (typeof el.showPicker === "function") el.showPicker();
+            else el.focus();
+        }
+        window.openDatePicker = openDatePicker;
+
+        inputEl.addEventListener("input", () => { clearTimeout(autocompleteTimer); autocompleteTimer = setTimeout(fetchAutocomplete, 220); });
+        comparePlayerA.addEventListener("input", () => { clearTimeout(compareAutoTimer); compareAutoTimer = setTimeout(() => fetchCompareAutocomplete("a"), 220); });
+        comparePlayerB.addEventListener("input", () => { clearTimeout(compareAutoTimer); compareAutoTimer = setTimeout(() => fetchCompareAutocomplete("b"), 220); });
+        inputEl.addEventListener("keypress", (e) => { if (e.key === "Enter") buscarJugador(); });
+        comparePlayerA.addEventListener("keypress", (e) => { if (e.key === "Enter") runModalCompare(); });
+        comparePlayerB.addEventListener("keypress", (e) => { if (e.key === "Enter") runModalCompare(); });
+        document.addEventListener("click", (e) => {
+            if (!boxEl.contains(e.target) && e.target !== inputEl) hideAutocomplete();
+            if (!compareAutoBoxA.contains(e.target) && !compareAutoBoxB.contains(e.target) && e.target !== comparePlayerA && e.target !== comparePlayerB) hideCompareAutocomplete();
+        });
+
+        const tabCurrent = document.getElementById("tabCurrentSeason");
+        const tabLast = document.getElementById("tabLastSeason");
+        if (tabCurrent) tabCurrent.textContent = `Current Season (${currentYear})`;
+        if (tabLast) tabLast.textContent = `Last Season (${currentYear - 1})`;
+        setActivePeriodTab();
+        fetchDashboard();
+        fetchWaiverScanner();
+        renderWatchlist();
+        refreshYahooAuthStatus();
+    </script>
+</body>
+</html>
+
