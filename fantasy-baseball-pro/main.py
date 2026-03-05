@@ -675,6 +675,96 @@ def _extract_stat_categories(node):
     return out
 
 
+def _normalize_player_name(name: str):
+    return " ".join((name or "").strip().lower().replace(".", "").replace("'", "").split())
+
+
+def _extract_players(node):
+    out = []
+    if isinstance(node, dict):
+        if "player_key" in node:
+            raw_name = node.get("name")
+            full_name = None
+            if isinstance(raw_name, dict):
+                full_name = raw_name.get("full") or raw_name.get("ascii_first") or raw_name.get("first")
+            elif isinstance(raw_name, str):
+                full_name = raw_name
+            if full_name:
+                out.append(
+                    {
+                        "player_key": node.get("player_key"),
+                        "name": full_name,
+                    }
+                )
+        for v in node.values():
+            out.extend(_extract_players(v))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_extract_players(item))
+    return out
+
+
+@lru_cache(maxsize=16)
+def _yahoo_league_rostered_name_map(league_key: str):
+    """
+    Build a name -> fantasy team map for selected Yahoo league.
+    Cached to avoid calling Yahoo on every UI refresh.
+    """
+    settings_data = _yahoo_api_get_json(
+        f"https://fantasysports.yahooapis.com/fantasy/v2/league/{urllib.parse.quote(league_key)}/teams?format=json"
+    )
+    team_rows = _extract_team_rows(settings_data)
+    team_key_to_name = {str(t.get("team_key")): str(t.get("name") or "Team") for t in team_rows if t.get("team_key")}
+    if not team_key_to_name:
+        return {}
+
+    name_map = {}
+    for team_key, team_name in team_key_to_name.items():
+        try:
+            roster_data = _yahoo_api_get_json(
+                f"https://fantasysports.yahooapis.com/fantasy/v2/team/{urllib.parse.quote(team_key)}/roster/players?format=json"
+            )
+            roster_players = _extract_players(roster_data)
+        except Exception:
+            roster_players = []
+
+        for p in roster_players:
+            n = _normalize_player_name(p.get("name", ""))
+            if not n:
+                continue
+            # Keep first owner if duplicated names appear.
+            if n not in name_map:
+                name_map[n] = team_name
+
+    return name_map
+
+
+def _attach_fantasy_ownership(rows: list, league_key: Optional[str]):
+    if not rows:
+        return rows
+    if not league_key:
+        for r in rows:
+            r["fantasy_owner"] = ""
+            r["fantasy_tag"] = ""
+        return rows
+
+    try:
+        ownership = _yahoo_league_rostered_name_map(league_key)
+    except Exception:
+        ownership = {}
+
+    for r in rows:
+        n = _normalize_player_name(str(r.get("name", "")))
+        owner = ownership.get(n)
+        if owner:
+            r["fantasy_owner"] = owner
+            r["fantasy_tag"] = owner
+        else:
+            r["fantasy_owner"] = ""
+            r["fantasy_tag"] = "FA/WAIVERS"
+    return rows
+
+
 @lru_cache(maxsize=512)
 def _leaderboard_rows(
     group: str,
@@ -1517,6 +1607,7 @@ def api_dashboard(
     season: Optional[int] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    league_key: Optional[str] = None,
 ):
     requested_mode = (mode or "").lower()
     if requested_mode in {"spring2026", "spring", "springtraining"}:
@@ -1555,12 +1646,14 @@ def api_dashboard(
             hitting_boards[label] = _leaderboard_rows("hitting", category, season_arg, start_arg, end_arg, game_type=game_type, limit=8)
         except Exception:
             hitting_boards[label] = []
+        _attach_fantasy_ownership(hitting_boards[label], league_key)
 
     for label, category in group_pitching.items():
         try:
             pitching_boards[label] = _leaderboard_rows("pitching", category, season_arg, start_arg, end_arg, game_type=game_type, limit=8)
         except Exception:
             pitching_boards[label] = []
+        _attach_fantasy_ownership(pitching_boards[label], league_key)
 
     # "On fire" snapshot = rolling 7-day trend board, split for hitters/pitchers.
     if use_spring:
@@ -1598,6 +1691,7 @@ def api_dashboard(
         )
     except Exception:
         on_fire_hitters = []
+    _attach_fantasy_ownership(on_fire_hitters, league_key)
     try:
         on_fire_pitchers = _build_hot_board(
             group="pitching",
@@ -1611,6 +1705,7 @@ def api_dashboard(
         )
     except Exception:
         on_fire_pitchers = []
+    _attach_fantasy_ownership(on_fire_pitchers, league_key)
 
     return {
         "stats_mode": period_req.get("mode"),
@@ -1625,7 +1720,7 @@ def api_dashboard(
 
 
 @app.get("/waiver_scanner")
-def api_waiver_scanner(mode: Optional[str] = "currentseason"):
+def api_waiver_scanner(mode: Optional[str] = "currentseason", league_key: Optional[str] = None):
     requested_mode = (mode or "").lower()
     if requested_mode in {"spring2026", "spring", "springtraining"}:
         period_req = _resolve_period_request("spring2026", 2026, None, None)
@@ -1681,6 +1776,8 @@ def api_waiver_scanner(mode: Optional[str] = "currentseason"):
         game_type=game_type,
         top_n=12,
     )
+    _attach_fantasy_ownership(hitters, league_key)
+    _attach_fantasy_ownership(pitchers, league_key)
 
     return {
         "mode": period_req.get("mode"),

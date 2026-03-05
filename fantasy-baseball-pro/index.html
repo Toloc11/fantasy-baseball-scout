@@ -386,8 +386,18 @@
             }
             return `<article class="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
                 <p class="mb-2 text-sm font-bold text-orange-300">${title}</p>
-                <div class="space-y-1">${rows.slice(0, 5).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span></p>`).join("")}</div>
+                <div class="space-y-1">${rows.slice(0, 5).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span> ${renderFantasyTag(r)}</p>`).join("")}</div>
             </article>`;
+        }
+
+        function renderFantasyTag(row) {
+            const tag = (row && row.fantasy_tag) ? String(row.fantasy_tag).trim() : "";
+            if (!tag) return "";
+            const isFa = tag.toUpperCase().includes("FA");
+            const cls = isFa
+                ? "border-slate-600 bg-slate-700/50 text-slate-200"
+                : "border-violet-500/50 bg-violet-500/15 text-violet-200";
+            return `<span class="ml-1 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cls}">${tag}</span>`;
         }
 
         function compareModeLabel(mode) {
@@ -441,7 +451,7 @@
                                 <p class="text-[11px] text-slate-400">${data.on_fire_label || "Last 7 Days"}</p>
                             </div>
                             <div class="space-y-1">
-                                ${onFireHitters.slice(0, 10).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
+                                ${onFireHitters.slice(0, 10).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span> ${renderFantasyTag(r)}</p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
                             </div>
                         </div>
                         <div class="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
@@ -450,7 +460,7 @@
                                 <p class="text-[11px] text-slate-400">${data.on_fire_label || "Last 7 Days"}</p>
                             </div>
                             <div class="space-y-1">
-                                ${onFirePitchers.slice(0, 10).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span></p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
+                                ${onFirePitchers.slice(0, 10).map(r => `<p class="text-sm text-slate-200"><span class="font-bold text-slate-100">#${r.rank}</span> ${renderDashboardPlayerLink(r)} <span class="text-orange-300">(${r.value})</span> ${renderFantasyTag(r)}</p>`).join("") || "<p class='text-sm text-slate-400'>No data.</p>"}
                             </div>
                         </div>
                     </div>
@@ -473,6 +483,7 @@
             try {
                 const params = new URLSearchParams();
                 params.set("mode", currentMode);
+                if (selectedYahooLeague) params.set("league_key", selectedYahooLeague);
                 const data = await fetchJsonWithRetry(
                     `${API_BASE}/dashboard?${params.toString()}`,
                     { retries: 1, timeoutMs: 15000, retryDelayMs: 1400 }
@@ -649,6 +660,7 @@
             try {
                 const params = new URLSearchParams();
                 params.set("mode", currentMode);
+                if (selectedYahooLeague) params.set("league_key", selectedYahooLeague);
                 const data = await fetchJsonWithRetry(
                     `${API_BASE}/waiver_scanner?${params.toString()}`,
                     { retries: 1, timeoutMs: 15000, retryDelayMs: 1400 }
@@ -666,7 +678,7 @@
                 <div class="space-y-2">
                     ${items.slice(0, 7).map(r => `<article class="rounded border border-slate-700 bg-slate-800/70 p-2">
                         <button class="text-left font-semibold text-slate-100 hover:text-orange-200" onclick="openDashboardPlayer(${r.id}, '${String(r.name).replace(/'/g, "\\'")}')">${r.name}</button>
-                        <p class="text-xs text-slate-400">${r.team} | ${r.posicion || "N/A"} | Score ${r.score}</p>
+                        <p class="text-xs text-slate-400">${r.team} | ${r.posicion || "N/A"} | Score ${r.score} ${renderFantasyTag(r)}</p>
                         <p class="text-[11px] text-orange-200">${(r.strengths || []).join(" | ")}</p>
                     </article>`).join("") || "<p class='text-sm text-slate-400'>No candidates.</p>"}
                 </div>
@@ -848,17 +860,47 @@
             const model = buildDecisionModel(data, trendPack);
             const addTone = model.addScore >= 70 ? "text-emerald-300" : (model.addScore >= 50 ? "text-yellow-300" : "text-rose-300");
             const dropTone = model.dropRisk >= 70 ? "text-rose-300" : (model.dropRisk >= 50 ? "text-yellow-300" : "text-emerald-300");
+
+            const addBand = model.addScore >= 80
+                ? { label: "STRONG ADD", chip: "bg-emerald-500/20 text-emerald-200 border-emerald-400/50", bar: "bg-emerald-400" }
+                : (model.addScore >= 65
+                    ? { label: "ADD / HOLD", chip: "bg-emerald-500/15 text-emerald-200 border-emerald-500/40", bar: "bg-emerald-300" }
+                    : (model.addScore >= 50
+                        ? { label: "STREAM / CONTEXT", chip: "bg-yellow-500/15 text-yellow-200 border-yellow-400/40", bar: "bg-yellow-300" }
+                        : { label: "LOW PRIORITY", chip: "bg-rose-500/15 text-rose-200 border-rose-400/40", bar: "bg-rose-300" }));
+
+            const dropBand = model.dropRisk <= 40
+                ? { label: "KEEP", chip: "bg-emerald-500/20 text-emerald-200 border-emerald-400/50", bar: "bg-emerald-400" }
+                : (model.dropRisk <= 60
+                    ? { label: "WATCH", chip: "bg-yellow-500/15 text-yellow-200 border-yellow-400/40", bar: "bg-yellow-300" }
+                    : (model.dropRisk <= 75
+                        ? { label: "DROP CANDIDATE", chip: "bg-orange-500/15 text-orange-200 border-orange-400/40", bar: "bg-orange-300" }
+                        : { label: "STRONG DROP", chip: "bg-rose-500/20 text-rose-200 border-rose-400/50", bar: "bg-rose-300" }));
+
             return `<div class="mt-5 grid gap-3 md:grid-cols-2">
                 <article class="rounded-xl border border-slate-700 bg-slate-900/55 p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Add Score</p>
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Add Score</p>
+                        <span class="rounded border px-2 py-0.5 text-[10px] font-bold tracking-wide ${addBand.chip}">${addBand.label}</span>
+                    </div>
                     <p class="mt-1 text-2xl font-bold ${addTone}">${model.addScore}</p>
+                    <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                        <div class="h-full ${addBand.bar}" style="width:${Math.max(0, Math.min(100, model.addScore))}%"></div>
+                    </div>
                     <div class="mt-1 space-y-1">${model.addReasons.map(r => `<p class="text-[11px] text-slate-400">${r}</p>`).join("")}</div>
                 </article>
                 <article class="rounded-xl border border-slate-700 bg-slate-900/55 p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Drop Risk</p>
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Drop Risk</p>
+                        <span class="rounded border px-2 py-0.5 text-[10px] font-bold tracking-wide ${dropBand.chip}">${dropBand.label}</span>
+                    </div>
                     <p class="mt-1 text-2xl font-bold ${dropTone}">${model.dropRisk}</p>
+                    <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+                        <div class="h-full ${dropBand.bar}" style="width:${Math.max(0, Math.min(100, model.dropRisk))}%"></div>
+                    </div>
                     <div class="mt-1 space-y-1">${model.dropReasons.map(r => `<p class="text-[11px] text-slate-400">${r}</p>`).join("")}</div>
                 </article>
+                <p class="md:col-span-2 text-[11px] text-slate-500">Reading guide: Add Score higher = better to acquire/keep. Drop Risk higher = stronger candidate to drop.</p>
             </div>`;
         }
 
@@ -1175,6 +1217,8 @@
             selectedYahooLeague = yahooLeagueSelect.value || "";
             renderYahooStatus();
             loadYahooLeagueContext(selectedYahooLeague);
+            fetchDashboard();
+            fetchWaiverScanner();
         });
         compareModeSelect.addEventListener("change", () => {
             compareMode = compareModeSelect.value || "currentseason";
